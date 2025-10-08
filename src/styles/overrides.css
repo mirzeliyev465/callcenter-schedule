@@ -1,0 +1,55 @@
+/* src/styles/overrides.css */
+/* Xüsusi komponent stilləri */
+.schedule-table {
+  @apply min-w-full divide-y divide-gray-200;
+}
+
+.schedule-table th {
+  @apply px-4 py-3 bg-gray-50 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider;
+}
+
+.schedule-table td {
+  @apply px-4 py-3 whitespace-nowrap text-sm text-gray-900;
+}
+
+.schedule-cell {
+  @apply text-center font-medium px-2 py-1 rounded-lg text-xs;
+}
+
+.schedule-cell.off {
+  @apply bg-red-100 text-red-700;
+}
+
+.schedule-cell.leave {
+  @apply bg-yellow-100 text-yellow-700;
+}
+
+.schedule-cell.morning {
+  @apply bg-blue-100 text-blue-700;
+}
+
+.schedule-cell.evening {
+  @apply bg-purple-100 text-purple-700;
+}
+
+/* Sidebar xüsusi stilləri */
+.sidebar-menu-item {
+  @apply flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200;
+}
+
+.sidebar-menu-item.active {
+  @apply bg-blue-600 text-white shadow-lg;
+}
+
+.sidebar-menu-item:not(.active) {
+  @apply text-gray-300 hover:bg-gray-700 hover:text-white;
+}
+
+/* Loading animasiyaları */
+.loading-spinner {
+  @apply w-8 h-8 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin;
+}
+
+.pulse-dot {
+  @apply w-2 h-2 bg-green-500 rounded-full animate-pulse;
+}
