@@ -3,14 +3,15 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   plugins: [react()],
-  server: {
-    host: true,  // Bütün hostlar üçün
-    port: 5173,  // 5173 portunu sınayın
-    strictPort: false, // Port busy olduqda avtomatik dəyişsin
-    open: true   // Browser avtomatik açılsın
-  },
+  base: '/callcenter-schedule/',
   build: {
     outDir: 'dist',
-    sourcemap: true
+    emptyOutDir: true,
+    sourcemap: false,
+    minify: 'terser'
+  },
+  // SPA üçün əlavə
+  esbuild: {
+    target: 'es2020'
   }
 })
