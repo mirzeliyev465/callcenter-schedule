@@ -1,0 +1,25 @@
+{
+    "name": "nobet-sistemi",
+    "version": "1.0.0",
+    "type": "module",
+    "homepage": "https://mirzeliyev465.github.io/callcenter-schedule",
+    "scripts": {
+      "dev": "vite",
+      "build": "vite build",
+      "preview": "vite preview",
+      "predeploy": "npm run build",
+      "deploy": "gh-pages -d dist"
+    },
+    "dependencies": {
+      "@emailjs/browser": "^4.4.1",
+      "firebase": "^10.7.1",
+      "react": "^18.2.0",
+      "react-dom": "^18.2.0",
+      "react-router-dom": "^6.8.0"
+    },
+    "devDependencies": {
+      "@vitejs/plugin-react": "^4.2.1",
+      "gh-pages": "^6.3.0",
+      "vite": "^5.0.8"
+    }
+  }

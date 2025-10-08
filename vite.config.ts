@@ -13,5 +13,4 @@ export default defineConfig({
   // SPA üçün əlavə
   esbuild: {
     target: 'es2020'
-  }
 })
