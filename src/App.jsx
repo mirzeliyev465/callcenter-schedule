@@ -624,8 +624,8 @@ function App() {
                   <span>Xoş gəlmisiniz</span>
                 </div>
                 <div style={{ lineHeight: '1.6' }}>
-                  <div>👑 <strong>ABC adress</strong> / 123456</div>
-                  <div>👤 <strong>Parol> / 123456</div>
+                  <div>👑 <strong>ABC adress</strong>
+                  <div>👤 <strong>Parol> 
                 </div>
               </div>
             </form>
