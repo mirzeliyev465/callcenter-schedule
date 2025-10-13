@@ -621,11 +621,11 @@ function App() {
               }}>
                 <div style={{ fontWeight: '600', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                   <span>🧪</span>
-                  <span>Test Hesabları:</span>
+                  <span>Xoş gəlmisiniz</span>
                 </div>
                 <div style={{ lineHeight: '1.6' }}>
-                  <div>👑 <strong>admin@callcenter.com</strong> / 123456</div>
-                  <div>👤 <strong>operator@callcenter.com</strong> / 123456</div>
+                  <div>👑 <strong>ABC adress</strong> / 123456</div>
+                  <div>👤 <strong>Parol> / 123456</div>
                 </div>
               </div>
             </form>
