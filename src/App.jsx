@@ -864,7 +864,7 @@ const OperatorDashboard = ({ user, userProfile, users, schedules, shiftChanges, 
                             cursor: 'pointer'
                           }}
                           title={`${schedule.shiftName} (${schedule.startTime}-${schedule.endTime})`}>
-                            {schedule.startTime?.split(':')[0] || 'N'}
+                            {schedule.startTime}-{schedule.endTime}
                           </div>
                         ) : (
                           <div style={{
