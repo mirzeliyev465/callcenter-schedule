@@ -196,9 +196,34 @@ const styles = {
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
     gap: '20px'
+  },
+  tableHeader: {
+    background: '#f8fafc',
+    padding: '12px 8px',
+    border: '1px solid #e2e8f0',
+    fontWeight: '600',
+    color: '#475569',
+    fontSize: '14px',
+    textAlign: 'center',
+    minWidth: '50px'
+  },
+  operatorCell: {
+    padding: '12px 16px',
+    border: '1px solid #e2e8f0',
+    background: 'white',
+    minWidth: '150px',
+    position: 'sticky',
+    left: 0,
+    background: '#f8fafc'
+  },
+  dayCell: {
+    padding: '8px 4px',
+    border: '1px solid #e2e8f0',
+    background: 'white',
+    minWidth: '50px',
+    height: '50px'
   }
 };
-
 // Şöbələr
 const departments = {
   info_sale: { name: 'İnfo Sale', color: '#3B82F6', bgColor: '#dbeafe' },
@@ -701,6 +726,184 @@ function OperatorDashboard({ user, userProfile, users, schedules, shiftChanges, 
   const [vacationRequest, setVacationRequest] = useState({ startDate: '', endDate: '', reason: '' });
   const [breakRequest, setBreakRequest] = useState({ breakType: '', breakTime: '', reason: '' });
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().slice(0, 10));
+  const [scheduleViewType, setScheduleViewType] = useState('list');
+  const [currentMonth, setCurrentMonth] = useState(new Date().getMonth());
+  const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
+
+  // Aylıq cədvəl komponenti
+  const MonthlyScheduleView = ({ schedules, users, currentMonth, currentYear }) => {
+    const monthNames = ["Yanvar", "Fevral", "Mart", "Aprel", "May", "İyun", 
+                       "İyul", "Avqust", "Sentyabr", "Oktyabr", "Noyabr", "Dekabr"];
+    
+    // Ayın günlərini yarat
+    const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+    const days = Array.from({ length: daysInMonth }, (_, i) => i + 1);
+    
+    // Cari ayda növbəsi olan operatorları tap
+    const operatorsWithSchedules = users.filter(user => 
+      user.role === 'operator' && 
+      schedules.some(schedule => 
+        schedule.userId === user.id && 
+        new Date(schedule.date).getMonth() === currentMonth &&
+        new Date(schedule.date).getFullYear() === currentYear
+      )
+    );
+  
+    return (
+      <div style={{ 
+        background: 'white', 
+        borderRadius: '12px', 
+        padding: '20px',
+        boxShadow: '0 4px 20px rgba(0,0,0,0.06)',
+        overflow: 'auto'
+      }}>
+        <div style={{ 
+          display: 'flex', 
+          justifyContent: 'space-between', 
+          alignItems: 'center', 
+          marginBottom: '20px' 
+        }}>
+          <h3 style={{ margin: 0, color: '#1e293b', fontSize: '20px', fontWeight: '600' }}>
+            {monthNames[currentMonth]} {currentYear} - Aylıq Növbə Cədvəli
+          </h3>
+          <div style={{ display: 'flex', gap: '10px' }}>
+            <button
+              onClick={() => {
+                if (currentMonth === 0) {
+                  setCurrentMonth(11);
+                  setCurrentYear(currentYear - 1);
+                } else {
+                  setCurrentMonth(currentMonth - 1);
+                }
+              }}
+              style={{
+                padding: '8px 16px',
+                border: '1px solid #e2e8f0',
+                background: 'white',
+                color: '#475569',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                fontWeight: '600',
+                fontSize: '14px',
+                transition: 'all 0.2s ease'
+              }}
+            >
+              ◀ Əvvəlki Ay
+            </button>
+            <button
+              onClick={() => {
+                if (currentMonth === 11) {
+                  setCurrentMonth(0);
+                  setCurrentYear(currentYear + 1);
+                } else {
+                  setCurrentMonth(currentMonth + 1);
+                }
+              }}
+              style={{
+                padding: '8px 16px',
+                border: '1px solid #e2e8f0',
+                background: 'white',
+                color: '#475569',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                fontWeight: '600',
+                fontSize: '14px',
+                transition: 'all 0.2s ease'
+              }}
+            >
+              Növbəti Ay ▶
+            </button>
+          </div>
+        </div>
+  
+        <div style={{ overflow: 'auto' }}>
+          <table style={{ 
+            width: '100%', 
+            borderCollapse: 'collapse',
+            minWidth: '800px'
+          }}>
+            <thead>
+              <tr>
+                <th style={styles.tableHeader}>Operator</th>
+                {days.map(day => (
+                  <th key={day} style={styles.tableHeader}>
+                    {day}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {operatorsWithSchedules.map(operator => (
+                <tr key={operator.id}>
+                  <td style={styles.operatorCell}>
+                    <div style={{ fontWeight: '600', color: '#1e293b' }}>
+                      {operator.name}
+                    </div>
+                    <div style={{ fontSize: '12px', color: '#64748b' }}>
+                      {operator.department}
+                    </div>
+                  </td>
+                  {days.map(day => {
+                    const dateStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                    const schedule = schedules.find(s => 
+                      s.userId === operator.id && s.date === dateStr
+                    );
+                    
+                    return (
+                      <td key={day} style={styles.dayCell}>
+                        {schedule ? (
+                          <div style={{
+                            background: operator.id === user.uid ? '#3b82f6' : '#10b981',
+                            color: 'white',
+                            padding: '4px 8px',
+                            borderRadius: '6px',
+                            fontSize: '12px',
+                            fontWeight: '600',
+                            textAlign: 'center',
+                            cursor: 'pointer'
+                          }}
+                          title={`${schedule.shiftName} (${schedule.startTime}-${schedule.endTime})`}>
+                            {schedule.startTime?.split(':')[0] || 'N'}
+                          </div>
+                        ) : (
+                          <div style={{
+                            color: '#94a3b8',
+                            fontSize: '12px',
+                            textAlign: 'center'
+                          }}>
+                            -
+                          </div>
+                        )}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        
+        {operatorsWithSchedules.length === 0 && (
+          <div style={{ 
+            textAlign: 'center', 
+            color: '#64748b', 
+            padding: '60px 40px',
+            background: '#f8fafc',
+            borderRadius: '8px',
+            marginTop: '20px'
+          }}>
+            <div style={{ fontSize: '64px', marginBottom: '16px', opacity: 0.5 }}>📅</div>
+            <h3 style={{ color: '#475569', marginBottom: '12px', fontSize: '20px', fontWeight: '600' }}>
+              Bu ay üçün növbə cədvəli yoxdur
+            </h3>
+            <p style={{ fontSize: '15px', opacity: 0.7 }}>
+              Növbə cədvəli planlaşdırılanda burada görünəcək
+            </p>
+          </div>
+        )}
+      </div>
+    );
+  };
 
   // Operator yalnız öz məlumatlarını görür
   const userSchedules = useMemo(() => 
@@ -911,96 +1114,146 @@ function OperatorDashboard({ user, userProfile, users, schedules, shiftChanges, 
         return (
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-              <h2 style={{ color: '#1e293b', margin: 0, fontSize: '24px', fontWeight: '700' }}>Növbə Cədvəlim</h2>
-              <div style={{ 
-                background: '#f0f9ff', 
-                color: '#0369a1', 
-                padding: '8px 16px', 
-                borderRadius: '12px', 
-                fontSize: '14px',
-                fontWeight: '600',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px'
-              }}>
-                <span>📅</span>
-                <span>{userSchedules.length} növbə</span>
+              <h2 style={{ color: '#1e293b', margin: 0, fontSize: '24px', fontWeight: '700' }}>
+                Növbə Cədvəlim
+              </h2>
+              <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                {/* Görünüş növü dəyişdirici */}
+                <div style={{ display: 'flex', background: '#f1f5f9', borderRadius: '8px', padding: '4px' }}>
+                  <button
+                    onClick={() => setScheduleViewType('list')}
+                    style={{
+                      padding: '8px 16px',
+                      borderRadius: '6px',
+                      border: 'none',
+                      background: scheduleViewType === 'list' ? '#3b82f6' : 'transparent',
+                      color: scheduleViewType === 'list' ? 'white' : '#64748b',
+                      fontWeight: '600',
+                      fontSize: '14px',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease'
+                    }}
+                  >
+                    📋 List Görünüşü
+                  </button>
+                  <button
+                    onClick={() => setScheduleViewType('monthly')}
+                    style={{
+                      padding: '8px 16px',
+                      borderRadius: '6px',
+                      border: 'none',
+                      background: scheduleViewType === 'monthly' ? '#3b82f6' : 'transparent',
+                      color: scheduleViewType === 'monthly' ? 'white' : '#64748b',
+                      fontWeight: '600',
+                      fontSize: '14px',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease'
+                    }}
+                  >
+                    📅 Aylıq Görünüş
+                  </button>
+                </div>
+                
+                <div style={{ 
+                  background: '#f0f9ff', 
+                  color: '#0369a1', 
+                  padding: '8px 16px', 
+                  borderRadius: '12px', 
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}>
+                  <span>📅</span>
+                  <span>{userSchedules.length} növbə</span>
+                </div>
               </div>
             </div>
             
-            {userSchedules.length === 0 ? (
-              <div style={{ 
-                textAlign: 'center', 
-                color: '#64748b', 
-                padding: '60px 40px',
-                background: 'white',
-                borderRadius: '16px',
-                border: '2px dashed #e2e8f0'
-              }}>
-                <div style={{ fontSize: '64px', marginBottom: '16px', opacity: 0.5 }}>📅</div>
-                <h3 style={{ color: '#475569', marginBottom: '12px', fontSize: '20px', fontWeight: '600' }}>Hələlik növbəniz yoxdur</h3>
-                <p style={{ fontSize: '15px', opacity: 0.7 }}>Növbə cədvəliniz planlaşdırılanda burada görünəcək</p>
-              </div>
+            {/* Görünüş növünə görə göstər */}
+            {scheduleViewType === 'monthly' ? (
+              <MonthlyScheduleView 
+              schedules={userSchedules}
+              users={users}
+              currentMonth={currentMonth}
+              currentYear={currentYear}
+            />
             ) : (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '20px' }}>
-                {userSchedules.map(schedule => (
-                  <div key={schedule.id} style={{ 
-                    ...styles.card, 
-                    borderLeft: `4px solid #3b82f6`,
-                    background: 'linear-gradient(135deg, #f8fafc 0%, #ffffff 100%)',
-                    transition: 'all 0.3s ease',
-                    cursor: 'pointer'
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.transform = 'translateY(-4px)';
-                    e.currentTarget.style.boxShadow = '0 8px 30px rgba(0,0,0,0.12)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.transform = 'translateY(0)';
-                    e.currentTarget.style.boxShadow = '0 4px 20px rgba(0,0,0,0.06)';
-                  }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
-                      <div style={{ fontWeight: '600', fontSize: '18px', color: '#1e40af' }}>
-                        {schedule.shiftName}
+              userSchedules.length === 0 ? (
+                <div style={{ 
+                  textAlign: 'center', 
+                  color: '#64748b', 
+                  padding: '60px 40px',
+                  background: 'white',
+                  borderRadius: '16px',
+                  border: '2px dashed #e2e8f0'
+                }}>
+                  <div style={{ fontSize: '64px', marginBottom: '16px', opacity: 0.5 }}>📅</div>
+                  <h3 style={{ color: '#475569', marginBottom: '12px', fontSize: '20px', fontWeight: '600' }}>Hələlik növbəniz yoxdur</h3>
+                  <p style={{ fontSize: '15px', opacity: 0.7 }}>Növbə cədvəliniz planlaşdırılanda burada görünəcək</p>
+                </div>
+              ) : (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '20px' }}>
+                  {userSchedules.map(schedule => (
+                    <div key={schedule.id} style={{ 
+                      ...styles.card, 
+                      borderLeft: `4px solid #3b82f6`,
+                      background: 'linear-gradient(135deg, #f8fafc 0%, #ffffff 100%)',
+                      transition: 'all 0.3s ease',
+                      cursor: 'pointer'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.transform = 'translateY(-4px)';
+                      e.currentTarget.style.boxShadow = '0 8px 30px rgba(0,0,0,0.12)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.transform = 'translateY(0)';
+                      e.currentTarget.style.boxShadow = '0 4px 20px rgba(0,0,0,0.06)';
+                    }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
+                        <div style={{ fontWeight: '600', fontSize: '18px', color: '#1e40af' }}>
+                          {schedule.shiftName}
+                        </div>
+                        <div style={{ 
+                          background: '#dbeafe', 
+                          color: '#1e40af', 
+                          padding: '4px 8px', 
+                          borderRadius: '8px', 
+                          fontSize: '12px',
+                          fontWeight: '600'
+                        }}>
+                          {schedule.startTime} - {schedule.endTime}
+                        </div>
                       </div>
-                      <div style={{ 
-                        background: '#dbeafe', 
-                        color: '#1e40af', 
-                        padding: '4px 8px', 
-                        borderRadius: '8px', 
-                        fontSize: '12px',
-                        fontWeight: '600'
-                      }}>
-                        {schedule.startTime} - {schedule.endTime}
+                      
+                      <div style={{ color: '#64748b', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ fontSize: '16px' }}>📅</span>
+                        <span>{new Date(schedule.date).toLocaleDateString('az-AZ', { 
+                          weekday: 'long', 
+                          year: 'numeric', 
+                          month: 'long', 
+                          day: 'numeric' 
+                        })}</span>
                       </div>
+                      
+                      {schedule.assignedBy && (
+                        <div style={{ 
+                          marginTop: '12px',
+                          padding: '8px 12px',
+                          background: '#f0f9ff',
+                          borderRadius: '8px',
+                          fontSize: '12px',
+                          color: '#0369a1',
+                          border: '1px solid #bae6fd'
+                        }}>
+                          <strong>👤 Təyin edən:</strong> {schedule.assignedBy}
+                        </div>
+                      )}
                     </div>
-                    
-                    <div style={{ color: '#64748b', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span style={{ fontSize: '16px' }}>📅</span>
-                      <span>{new Date(schedule.date).toLocaleDateString('az-AZ', { 
-                        weekday: 'long', 
-                        year: 'numeric', 
-                        month: 'long', 
-                        day: 'numeric' 
-                      })}</span>
-                    </div>
-                    
-                    {schedule.assignedBy && (
-                      <div style={{ 
-                        marginTop: '12px',
-                        padding: '8px 12px',
-                        background: '#f0f9ff',
-                        borderRadius: '8px',
-                        fontSize: '12px',
-                        color: '#0369a1',
-                        border: '1px solid #bae6fd'
-                      }}>
-                        <strong>👤 Təyin edən:</strong> {schedule.assignedBy}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )
             )}
           </div>
         );
@@ -1690,9 +1943,9 @@ function OperatorDashboard({ user, userProfile, users, schedules, shiftChanges, 
                 alignItems: 'center',
                 gap: '6px'
               }}>
-                <span>{departments[userProfile.department]?.name}</span>
+                <span>{userProfile.department}</span>
                 <span>•</span>
-                <span>{roles[userProfile.role]?.name}</span>
+                <span>Operator</span>
               </div>
             </div>
 
@@ -1962,14 +2215,14 @@ function OperatorDashboard({ user, userProfile, users, schedules, shiftChanges, 
             backdropFilter: 'blur(10px)'
           }}>
             <span style={{ 
-              background: departments[userProfile.department]?.color, 
+              background: '#3b82f6', 
               width: '8px', 
               height: '8px', 
               borderRadius: '50%' 
             }}></span>
             <span>{userProfile?.name}</span>
             <span style={{ opacity: 0.7 }}>•</span>
-            <span>{departments[userProfile.department]?.name}</span>
+            <span>{userProfile.department}</span>
           </div>
           <button 
             onClick={onLogout} 
@@ -2167,12 +2420,13 @@ function OperatorDashboard({ user, userProfile, users, schedules, shiftChanges, 
                   onChange={(e) => setBreakRequest({...breakRequest, breakTime: e.target.value})}
                 >
                   <option value="">Çay fasiləsi vaxtı seçin</option>
-                  {breakConfig.tea.times.map(time => (
-                    <option key={time} value={time}>
-                      {time} {time.includes('10:') || time.includes('11:') ? '(1-ci Çay)' : 
-                             time.includes('15:') || time.includes('16:') ? '(2-ci Çay)' : '(3-cü Çay)'}
-                    </option>
-                  ))}
+                  <option value="10:00">10:00 (1-ci Çay)</option>
+                  <option value="10:30">10:30 (1-ci Çay)</option>
+                  <option value="11:00">11:00 (1-ci Çay)</option>
+                  <option value="15:00">15:00 (2-ci Çay)</option>
+                  <option value="15:30">15:30 (2-ci Çay)</option>
+                  <option value="16:00">16:00 (2-ci Çay)</option>
+                  <option value="17:00">17:00 (3-cü Çay)</option>
                 </select>
               </div>
             )}
@@ -2192,9 +2446,11 @@ function OperatorDashboard({ user, userProfile, users, schedules, shiftChanges, 
                   onChange={(e) => setBreakRequest({...breakRequest, breakTime: e.target.value})}
                 >
                   <option value="">Nahar fasiləsi vaxtı seçin</option>
-                  {breakConfig.lunch.times.map(time => (
-                    <option key={time} value={time}>{time}</option>
-                  ))}
+                  <option value="12:00">12:00</option>
+                  <option value="12:30">12:30</option>
+                  <option value="13:00">13:00</option>
+                  <option value="13:30">13:30</option>
+                  <option value="14:00">14:00</option>
                 </select>
               </div>
             )}
@@ -2319,7 +2575,7 @@ function OperatorDashboard({ user, userProfile, users, schedules, shiftChanges, 
                 <option value="">Operator seçin</option>
                 {departmentUsers.map(user => (
                   <option key={user.id} value={user.id}>
-                    {user.name} - {departments[user.department]?.name}
+                    {user.name} - {user.department}
                   </option>
                 ))}
               </select>
