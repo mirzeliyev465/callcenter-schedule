@@ -198,7 +198,6 @@ const styles = {
     gap: '20px'
   },
   tableHeader: {
-    background: '#f8fafc',
     padding: '12px 8px',
     border: '1px solid #e2e8f0',
     fontWeight: '600',
@@ -214,7 +213,7 @@ const styles = {
     minWidth: '150px',
     position: 'sticky',
     left: 0,
-    background: '#f8fafc'
+  
   },
   dayCell: {
     padding: '8px 4px',
@@ -716,12 +715,13 @@ function App() {
   );
 }
 
-// OPERATOR DASHBOARD - Professional Design
-function OperatorDashboard({ user, userProfile, users, schedules, shiftChanges, vacations, breaks, breakRequests, onLogout }) {
+// 
+const OperatorDashboard = ({ user, userProfile, users, schedules, shiftChanges, vacations, breaks, breakRequests, onLogout }) => {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [showChangeModal, setShowChangeModal] = useState(false);
   const [showVacationModal, setShowVacationModal] = useState(false);
   const [showBreakModal, setShowBreakModal] = useState(false);
+  const [showIncomingRequests, setShowIncomingRequests] = useState(false);
   const [changeRequest, setChangeRequest] = useState({ toUserId: '', date: '', reason: '' });
   const [vacationRequest, setVacationRequest] = useState({ startDate: '', endDate: '', reason: '' });
   const [breakRequest, setBreakRequest] = useState({ breakType: '', breakTime: '', reason: '' });
@@ -739,9 +739,10 @@ function OperatorDashboard({ user, userProfile, users, schedules, shiftChanges, 
     const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
     const days = Array.from({ length: daysInMonth }, (_, i) => i + 1);
     
-    // Cari ayda növbəsi olan operatorları tap
+    // Cari ayda növbəsi olan operatorları tap (YALNIZ SİZİN ŞÖBƏNİZDƏ)
     const operatorsWithSchedules = users.filter(user => 
       user.role === 'operator' && 
+      user.department === userProfile.department && // Şöbə filtrini əlavə edin
       schedules.some(schedule => 
         schedule.userId === user.id && 
         new Date(schedule.date).getMonth() === currentMonth &&
@@ -944,6 +945,14 @@ function OperatorDashboard({ user, userProfile, users, schedules, shiftChanges, 
   const lunchBreaks = useMemo(() => 
     allBreaksToday.filter(b => b.breakType === 'lunch'), [allBreaksToday]);
 
+  // Gələn növbə dəyişikliyi sorğuları (KÖHNƏ SİSTEM İLƏ)
+  const incomingShiftRequests = useMemo(() => 
+    shiftChanges.filter(change => 
+      change.toUserId === user.uid && 
+      change.status === 'pending' // Köhnə sistemdə 'pending' statusu
+    ), [shiftChanges, user.uid]);
+
+  // Növbə dəyişikliyi sorğusu (KÖHNƏ SİSTEM)
   const handleShiftChange = async () => {
     if (!changeRequest.toUserId || !changeRequest.date) {
       alert('⚠️ Zəhmət olmasa bütün sahələri doldurun!');
@@ -951,10 +960,12 @@ function OperatorDashboard({ user, userProfile, users, schedules, shiftChanges, 
     }
 
     try {
+      // Cari operatorun növbəsini yoxla
       const currentSchedule = schedules.find(s => 
         s.userId === user.uid && s.date === changeRequest.date
       );
 
+      // Hədəf operatorun növbəsini yoxla
       const toUserSchedule = schedules.find(s => 
         s.userId === changeRequest.toUserId && s.date === changeRequest.date
       );
@@ -969,29 +980,98 @@ function OperatorDashboard({ user, userProfile, users, schedules, shiftChanges, 
         return;
       }
 
+      // Hədəf operatorun məlumatlarını tap
+      const targetOperator = departmentUsers.find(u => u.id === changeRequest.toUserId);
+      
+      if (!targetOperator) {
+        alert('❌ Seçilmiş operator tapılmadı!');
+        return;
+      }
+
+      // ✅ KÖHNƏ SİSTEM İSTİFADƏ ET - shiftChanges collection
       await addDoc(collection(db, 'shiftChanges'), {
         fromUserId: user.uid,
         fromUserName: userProfile.name,
         fromUserDepartment: userProfile.department,
         toUserId: changeRequest.toUserId,
-        toUserName: departmentUsers.find(u => u.id === changeRequest.toUserId)?.name,
+        toUserName: targetOperator.name,
+        toUserDepartment: targetOperator.department,
         date: changeRequest.date,
         fromShift: currentSchedule.shiftName,
         toShift: toUserSchedule.shiftName,
+        fromUserStartTime: currentSchedule.startTime,
+        fromUserEndTime: currentSchedule.endTime,
+        toUserStartTime: toUserSchedule.startTime,
+        toUserEndTime: toUserSchedule.endTime,
         reason: changeRequest.reason,
-        status: 'pending',
+        status: 'pending', // Köhnə status
         createdAt: serverTimestamp()
       });
 
-      alert('✅ Növbə dəyişikliyi sorğusu göndərildi!');
+      alert('✅ Növbə dəyişikliyi sorğusu göndərildi! Admin təsdiqini gözləyin.');
+      
+      // Modalı bağla və formu təmizlə
       setShowChangeModal(false);
       setChangeRequest({ toUserId: '', date: '', reason: '' });
+      
     } catch (error) {
       console.error('Shift change error:', error);
+      alert('❌ Xəta baş verdi: ' + error.message);
+    }
+  };
+
+  // Gələn sorğunu təsdiqlə (KÖHNƏ SİSTEM)
+  const approveShiftChangeRequest = async (requestId) => {
+    try {
+      const request = shiftChanges.find(r => r.id === requestId);
+      
+      if (!request) {
+        alert('❌ Sorğu tapılmadı!');
+        return;
+      }
+
+      // Statusu təsdiqləndi olaraq yenilə
+      await updateDoc(doc(db, 'shiftChanges', requestId), {
+        status: 'approved',
+        approvedBy: userProfile.name,
+        approvedAt: serverTimestamp()
+      });
+
+      alert('✅ Sorğu təsdiqləndi!');
+      setShowIncomingRequests(false);
+    } catch (error) {
+      console.error('Shift approval error:', error);
       alert('❌ Xəta: ' + error.message);
     }
   };
 
+  // Gələn sorğunu rədd et (KÖHNƏ SİSTEM)
+  const rejectShiftChangeRequest = async (requestId) => {
+    try {
+      const request = shiftChanges.find(r => r.id === requestId);
+      
+      if (!request) {
+        alert('❌ Sorğu tapılmadı!');
+        return;
+      }
+
+      // Statusu rədd edildi olaraq yenilə
+      await updateDoc(doc(db, 'shiftChanges', requestId), {
+        status: 'rejected',
+        approvedBy: userProfile.name,
+        approvedAt: serverTimestamp(),
+        rejectionReason: 'Operator tərəfindən rədd edildi'
+      });
+
+      alert('❌ Sorğu rədd edildi!');
+      setShowIncomingRequests(false);
+    } catch (error) {
+      console.error('Shift rejection error:', error);
+      alert('❌ Xəta: ' + error.message);
+    }
+  };
+
+  // Məzuniyyət sorğusu
   const handleVacationRequest = async () => {
     if (!vacationRequest.startDate || !vacationRequest.endDate) {
       alert('⚠️ Zəhmət olmasa bütün sahələri doldurun!');
@@ -1019,6 +1099,7 @@ function OperatorDashboard({ user, userProfile, users, schedules, shiftChanges, 
     }
   };
 
+  // Fasilə dəyişikliyi sorğusu
   const handleBreakRequest = async () => {
     if (!breakRequest.breakType || !breakRequest.breakTime) {
       alert('⚠️ Zəhmət olmasa bütün sahələri doldurun!');
@@ -1047,6 +1128,7 @@ function OperatorDashboard({ user, userProfile, users, schedules, shiftChanges, 
     }
   };
 
+  // Fasilə sorğusunu təsdiqlə
   const approveBreakRequest = async (requestId) => {
     try {
       const request = breakRequests.find(r => r.id === requestId);
@@ -1093,6 +1175,7 @@ function OperatorDashboard({ user, userProfile, users, schedules, shiftChanges, 
     }
   };
 
+  // Fasilə sorğusunu rədd et
   const rejectBreakRequest = async (requestId) => {
     try {
       await updateDoc(doc(db, 'breakRequests', requestId), {
@@ -1174,11 +1257,11 @@ function OperatorDashboard({ user, userProfile, users, schedules, shiftChanges, 
             {/* Görünüş növünə görə göstər */}
             {scheduleViewType === 'monthly' ? (
               <MonthlyScheduleView 
-              schedules={userSchedules}
-              users={users}
-              currentMonth={currentMonth}
-              currentYear={currentYear}
-            />
+                schedules={schedules}
+                users={users}
+                currentMonth={currentMonth}
+                currentYear={currentYear}
+              />
             ) : (
               userSchedules.length === 0 ? (
                 <div style={{ 
@@ -1718,26 +1801,201 @@ function OperatorDashboard({ user, userProfile, users, schedules, shiftChanges, 
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
               <h2 style={{ color: '#1e293b', margin: 0, fontSize: '24px', fontWeight: '700' }}>Növbə Dəyişikliklərim</h2>
-              <button 
-                onClick={() => setShowChangeModal(true)}
-                style={{ 
-                  ...styles.button, 
-                  background: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)', 
-                  color: 'white',
-                  fontWeight: '600'
-                }}
-              >
-                <span>➕</span>
-                Yeni Dəyişiklik Sorğusu
-              </button>
+              <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                <button 
+                  onClick={() => setShowIncomingRequests(true)}
+                  style={{ 
+                    ...styles.button, 
+                    background: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)', 
+                    color: 'white',
+                    fontWeight: '600'
+                  }}
+                >
+                  <span>📥</span>
+                  Gələn Sorğular ({incomingShiftRequests.length})
+                </button>
+                <button 
+                  onClick={() => setShowChangeModal(true)}
+                  style={{ 
+                    ...styles.button, 
+                    background: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)', 
+                    color: 'white',
+                    fontWeight: '600'
+                  }}
+                >
+                  <span>➕</span>
+                  Yeni Dəyişiklik Sorğusu
+                </button>
+              </div>
             </div>
             
+            {/* Gələn Sorğular Modal */}
+            {showIncomingRequests && (
+              <div style={styles.modal}>
+                <div style={styles.modalContent}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+                    <h3 style={{ color: '#1e293b', margin: 0, fontSize: '20px', fontWeight: '700' }}>
+                      📥 Gələn Növbə Dəyişikliyi Sorğuları
+                    </h3>
+                    <button 
+                      onClick={() => setShowIncomingRequests(false)} 
+                      style={{ 
+                        background: 'none', 
+                        border: 'none', 
+                        fontSize: '20px', 
+                        cursor: 'pointer', 
+                        color: '#64748b',
+                        width: '32px',
+                        height: '32px',
+                        borderRadius: '8px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        transition: 'all 0.2s ease'
+                      }}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  
+                  {incomingShiftRequests.length === 0 ? (
+                    <div style={{ textAlign: 'center', color: '#64748b', padding: '60px 40px' }}>
+                      <div style={{ fontSize: '64px', marginBottom: '16px', opacity: 0.5 }}>📭</div>
+                      <h3 style={{ color: '#475569', marginBottom: '12px', fontSize: '20px', fontWeight: '600' }}>
+                        Gələn sorğunuz yoxdur
+                      </h3>
+                      <p style={{ fontSize: '15px', opacity: 0.7 }}>
+                        Digər operatorlar sizə növbə dəyişikliyi sorğusu göndərdikdə burada görünəcək
+                      </p>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', maxHeight: '500px', overflowY: 'auto' }}>
+                      {incomingShiftRequests.map(request => (
+                        <div key={request.id} style={{ 
+                          padding: '20px', 
+                          border: '1px solid #e2e8f0', 
+                          borderRadius: '12px', 
+                          background: 'linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)',
+                          transition: 'all 0.3s ease'
+                        }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
+                            <div style={{ fontWeight: '600', fontSize: '16px', color: '#1e293b' }}>
+                              {request.fromUserName}
+                            </div>
+                            <div style={{ 
+                              background: '#dbeafe', 
+                              color: '#1e40af', 
+                              padding: '4px 8px', 
+                              borderRadius: '6px', 
+                              fontSize: '11px',
+                              fontWeight: '600'
+                            }}>
+                              {request.fromUserDepartment}
+                            </div>
+                          </div>
+                          
+                          <div style={{ color: '#64748b', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <span>📅</span>
+                              <span>{request.date}</span>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <span>🔄</span>
+                              <span>{request.fromShift} → {request.toShift}</span>
+                            </div>
+                          </div>
+                          
+                          <div style={{ color: '#64748b', fontSize: '14px', marginBottom: '12px' }}>
+                            <strong>⏰ Vaxtlar:</strong> {request.fromUserStartTime}-{request.fromUserEndTime} → {request.toUserStartTime}-{request.toUserEndTime}
+                          </div>
+                          
+                          {request.reason && (
+                            <div style={{ 
+                              color: '#64748b', 
+                              fontSize: '13px', 
+                              marginBottom: '16px', 
+                              padding: '12px', 
+                              background: 'white', 
+                              borderRadius: '8px',
+                              border: '1px solid #e2e8f0'
+                            }}>
+                              <strong>📝 Səbəb:</strong> {request.reason}
+                            </div>
+                          )}
+                          
+                          <div style={{ display: 'flex', gap: '12px' }}>
+                            <button 
+                              onClick={() => {
+                                approveShiftChangeRequest(request.id);
+                                setShowIncomingRequests(false);
+                              }}
+                              style={{ 
+                                ...styles.button, 
+                                background: 'linear-gradient(135deg, #10b981 0%, #047857 100%)', 
+                                color: 'white', 
+                                flex: 1,
+                                fontWeight: '600',
+                                fontSize: '14px'
+                              }}
+                            >
+                              <span>✅</span>
+                              Təsdiqlə
+                            </button>
+                            <button 
+                              onClick={() => {
+                                rejectShiftChangeRequest(request.id);
+                                setShowIncomingRequests(false);
+                              }}
+                              style={{ 
+                                ...styles.button, 
+                                background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)', 
+                                color: 'white', 
+                                flex: 1,
+                                fontWeight: '600',
+                                fontSize: '14px'
+                              }}
+                            >
+                              <span>❌</span>
+                              Rədd Et
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+            
+            {/* Göndərdiyim Sorğular */}
             <div style={styles.card}>
+              <h3 style={{ 
+                color: '#3b82f6', 
+                marginBottom: '20px', 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: '10px',
+                fontSize: '18px',
+                fontWeight: '600'
+              }}>
+                <span style={{ 
+                  background: '#3b82f6', 
+                  color: 'white', 
+                  width: '32px', 
+                  height: '32px', 
+                  borderRadius: '8px', 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  justifyContent: 'center',
+                  fontSize: '16px'
+                }}>📤</span>
+                <span>Göndərdiyim Sorğular</span>
+              </h3>
+              
               {userChanges.length === 0 ? (
-                <div style={{ textAlign: 'center', color: '#64748b', padding: '60px 40px' }}>
-                  <div style={{ fontSize: '64px', marginBottom: '16px', opacity: 0.5 }}>🔄</div>
-                  <h3 style={{ color: '#475569', marginBottom: '12px', fontSize: '20px', fontWeight: '600' }}>Hələlik növbə dəyişikliyiniz yoxdur</h3>
-                  <p style={{ fontSize: '15px', opacity: 0.7 }}>Növbə dəyişikliyi sorğusu göndərdikdə burada görünəcək</p>
+                <div style={{ textAlign: 'center', color: '#64748b', padding: '40px 20px' }}>
+                  <div style={{ fontSize: '48px', marginBottom: '12px', opacity: 0.5 }}>📤</div>
+                  <p style={{ fontSize: '15px' }}>Hələlik növbə dəyişikliyi sorğusu göndərməmisiniz</p>
                 </div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -1755,14 +2013,6 @@ function OperatorDashboard({ user, userProfile, users, schedules, shiftChanges, 
                         'linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%)' : 
                         'linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%)',
                       transition: 'all 0.3s ease'
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.transform = 'translateY(-2px)';
-                      e.currentTarget.style.boxShadow = '0 8px 25px rgba(0,0,0,0.1)';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.transform = 'translateY(0)';
-                      e.currentTarget.style.boxShadow = 'none';
                     }}>
                       <div style={{ flex: 1 }}>
                         <div style={{ fontWeight: '600', fontSize: '16px', marginBottom: '8px', color: '#1e293b' }}>
@@ -2776,7 +3026,8 @@ function OperatorDashboard({ user, userProfile, users, schedules, shiftChanges, 
       )}
     </div>
   );
-}
+};
+
 
 // SchedulePlanner komponenti - Professional Design
 function SchedulePlanner({ users, schedules, shiftTypes, currentUser }) {
