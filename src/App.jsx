@@ -3081,13 +3081,11 @@ function SchedulePlanner({ users, schedules, shiftTypes, currentUser }) {
     return filtered;
   }, [users, currentUser.department, searchTerm, selectedShift, schedules, selectedMonth]);
 
-  // Ayın gün sayını hesabla
+  // DÜZƏLDİ: Ayın gün sayını DÜZGÜN hesabla
   const daysInMonth = useMemo(() => {
-    return new Date(
-      parseInt(selectedMonth.split('-')[0]), 
-      parseInt(selectedMonth.split('-')[1]), 
-      0
-    ).getDate();
+    const [year, month] = selectedMonth.split('-').map(Number);
+    // month artıq düzgün ədəddir (Yanvar=1, Fevral=2, ...)
+    return new Date(year, month, 0).getDate();
   }, [selectedMonth]);
   
   // Cari ayın növbələri
@@ -3098,6 +3096,7 @@ function SchedulePlanner({ users, schedules, shiftTypes, currentUser }) {
   // State initialization
   useEffect(() => {
     console.log('🔄 SchedulePlanner useEffect işə düşdü');
+    console.log('📅 Ay:', selectedMonth, 'Gün sayı:', daysInMonth);
     
     if (filteredUsers.length === 0) {
       setLoading(false);
@@ -3113,6 +3112,7 @@ function SchedulePlanner({ users, schedules, shiftTypes, currentUser }) {
       initialSchedules[user.id] = {};
       initialSelected[user.id] = {};
       
+      // BÜTÜN GÜNLƏR ÜÇÜN (1-dən daysInMonth-ə qədər)
       for (let day = 1; day <= daysInMonth; day++) {
         const date = `${selectedMonth}-${day.toString().padStart(2, '0')}`;
         const existingSchedule = monthSchedules.find(s => 
@@ -3183,7 +3183,7 @@ function SchedulePlanner({ users, schedules, shiftTypes, currentUser }) {
         }
       }
 
-      // Yeni növbələri əlavə et
+      // Yeni növbələri əlavə et - BÜTÜN GÜNLƏR ÜÇÜN
       let savedCount = 0;
       const savePromises = [];
 
@@ -3191,6 +3191,7 @@ function SchedulePlanner({ users, schedules, shiftTypes, currentUser }) {
         const user = users.find(u => u.id === userId);
         if (!user) continue;
 
+        // BÜTÜN GÜNLƏR ÜÇÜN (1-dən daysInMonth-ə qədər)
         for (let day = 1; day <= daysInMonth; day++) {
           const shiftName = selectedShifts[userId]?.[day];
           if (shiftName && shiftName !== '' && shiftName !== 'OFF') {
@@ -3306,6 +3307,17 @@ function SchedulePlanner({ users, schedules, shiftTypes, currentUser }) {
             }}
             min={new Date().toISOString().slice(0, 7)}
           />
+          {/* Debug info - gün sayını göstər */}
+          <div style={{ 
+            background: '#f0f9ff', 
+            color: '#0369a1', 
+            padding: '8px 12px', 
+            borderRadius: '8px', 
+            fontSize: '12px',
+            fontWeight: '600'
+          }}>
+            📅 {daysInMonth} gün
+          </div>
         </div>
       </div>
 
@@ -3404,8 +3416,17 @@ function SchedulePlanner({ users, schedules, shiftTypes, currentUser }) {
         </div>
       ) : (
         <>
-          <div style={{ overflowX: 'auto', marginBottom: '24px' }}>
-            <div style={{ ...styles.table, minWidth: '800px' }}>
+          {/* ƏSAS DÜZƏLİŞ: Dinamik en təyin et */}
+          <div style={{ 
+            overflowX: 'auto', 
+            marginBottom: '24px',
+            border: '1px solid #e2e8f0',
+            borderRadius: '8px'
+          }}>
+            <div style={{ 
+              minWidth: `${220 + (daysInMonth * 65)}px`, // Dinamik en
+              background: 'white'
+            }}>
               {/* Header */}
               <div style={{ 
                 display: 'grid', 
@@ -3421,7 +3442,11 @@ function SchedulePlanner({ users, schedules, shiftTypes, currentUser }) {
                   fontWeight: '600', 
                   borderRight: '1px solid #e2e8f0',
                   fontSize: '14px',
-                  color: '#374151'
+                  color: '#374151',
+                  position: 'sticky',
+                  left: 0,
+                  background: 'linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)',
+                  zIndex: 11
                 }}>
                   <div>Operator ({filteredUsers.length} nəfər)</div>
                   <div style={{ fontSize: '12px', color: '#64748b', fontWeight: '400', marginTop: '4px' }}>
@@ -3491,7 +3516,8 @@ function SchedulePlanner({ users, schedules, shiftTypes, currentUser }) {
                     fontSize: '14px',
                     position: 'sticky',
                     left: 0,
-                    zIndex: 5
+                    zIndex: 5,
+                    background: 'inherit'
                   }}>
                     <div style={{ 
                       width: '32px', 
@@ -3665,13 +3691,45 @@ function SchedulePlanner({ users, schedules, shiftTypes, currentUser }) {
 }
 
 function AdminMonthlySchedule({ schedules, users, shiftTypes, selectedMonth, onMonthChange, searchTerm, onSearchChange }) {
-  const monthSchedules = schedules.filter(s => s.date?.startsWith(selectedMonth));
-  const daysInMonth = new Date(selectedMonth.split('-')[0], selectedMonth.split('-')[1], 0).getDate();
+  // Ayın gün sayını hesabla
+  const getDaysInMonth = () => {
+    const [year, month] = selectedMonth.split('-').map(Number);
+    return new Date(year, month, 0).getDate();
+  };
+
+  const daysInMonth = getDaysInMonth();
+  
+  // Bütün ay üçün növbələri filtrlə
+  const monthSchedules = schedules.filter(s => {
+    if (!s.date) return false;
+    const scheduleDate = new Date(s.date);
+    const selectedDate = new Date(selectedMonth + '-01');
+    return scheduleDate.getMonth() === selectedDate.getMonth() && 
+           scheduleDate.getFullYear() === selectedDate.getFullYear();
+  });
 
   const filteredUsers = users.filter(user => 
     user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     user.email.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  // BÜTÜN GÜNLƏRİN MASSİVİNİ YARAT
+  const allDays = Array.from({ length: daysInMonth }, (_, i) => {
+    const day = i + 1;
+    return {
+      day,
+      date: `${selectedMonth}-${day.toString().padStart(2, '0')}`,
+      isWeekend: false, // Aşağıda təyin ediləcək
+      isToday: false // Aşağıda təyin ediləcək
+    };
+  }).map(dayInfo => {
+    const date = new Date(dayInfo.date);
+    return {
+      ...dayInfo,
+      isWeekend: date.getDay() === 0 || date.getDay() === 6,
+      isToday: new Date().toDateString() === date.toDateString()
+    };
+  });
 
   return (
     <div>
@@ -3685,30 +3743,87 @@ function AdminMonthlySchedule({ schedules, users, shiftTypes, selectedMonth, onM
         />
       </div>
 
-      <div style={{ overflowX: 'auto' }}>
-        <div style={{ ...styles.table, minWidth: '800px' }}>
+      {/* Axtarış */}
+      <div style={{ marginBottom: '20px' }}>
+        <input
+          style={styles.searchBox}
+          placeholder="🔍 İstifadəçi axtar..."
+          value={searchTerm}
+          onChange={(e) => onSearchChange(e.target.value)}
+        />
+      </div>
+
+      {/* Statistika */}
+      <div style={{ 
+        display: 'grid', 
+        gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', 
+        gap: '15px', 
+        marginBottom: '20px' 
+      }}>
+        <div style={{ ...styles.card, textAlign: 'center', background: '#f0f9ff' }}>
+          <div style={{ fontSize: '24px', marginBottom: '8px' }}>👥</div>
+          <div style={{ fontSize: '14px', color: '#0369a1' }}>Ümumi İstifadəçilər</div>
+          <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#0369a1' }}>{filteredUsers.length}</div>
+        </div>
+        <div style={{ ...styles.card, textAlign: 'center', background: '#f0fdf4' }}>
+          <div style={{ fontSize: '24px', marginBottom: '8px' }}>📅</div>
+          <div style={{ fontSize: '14px', color: '#047857' }}>Ayın Növbələri</div>
+          <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#047857' }}>{monthSchedules.length}</div>
+        </div>
+        <div style={{ ...styles.card, textAlign: 'center', background: '#fffbeb' }}>
+          <div style={{ fontSize: '24px', marginBottom: '8px' }}>📊</div>
+          <div style={{ fontSize: '14px', color: '#92400e' }}>Ayın Günləri</div>
+          <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#92400e' }}>{daysInMonth}</div>
+        </div>
+      </div>
+
+      {/* ƏSAS DÜZƏLİŞ: Grid template düzgün təyin edilməlidir */}
+      <div style={{ overflowX: 'auto', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
+        <div style={{ 
+          minWidth: `${200 + (daysInMonth * 80)}px`, // Dinamik en
+          background: 'white'
+        }}>
+          {/* Header - BÜTÜN GÜNLƏR GÖSTƏRİLİR */}
           <div style={{ 
             display: 'grid', 
             gridTemplateColumns: `200px repeat(${daysInMonth}, 80px)`, 
             background: '#f8fafc',
             borderBottom: '2px solid #e2e8f0'
           }}>
-            <div style={{ padding: '15px', fontWeight: '600', borderRight: '1px solid #e2e8f0' }}>
+            <div style={{ 
+              padding: '15px', 
+              fontWeight: '600', 
+              borderRight: '1px solid #e2e8f0',
+              position: 'sticky',
+              left: 0,
+              background: '#f8fafc',
+              zIndex: 3
+            }}>
               İstifadəçi
             </div>
-            {Array.from({ length: daysInMonth }, (_, i) => (
+            {allDays.map((dayInfo, i) => (
               <div key={i} style={{ 
                 padding: '15px', 
                 fontWeight: '600', 
                 borderRight: '1px solid #e2e8f0',
                 textAlign: 'center',
-                minWidth: '80px'
+                minWidth: '80px',
+                background: dayInfo.isToday ? 
+                  'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)' : 
+                  dayInfo.isWeekend ? '#fef3c7' : '#f8fafc',
+                color: dayInfo.isToday ? 'white' : dayInfo.isWeekend ? '#92400e' : '#374151'
               }}>
-                {i + 1}
+                {dayInfo.day}
+                {dayInfo.isWeekend && (
+                  <div style={{ fontSize: '10px', marginTop: '2px' }}>
+                    {new Date(dayInfo.date).getDay() === 0 ? 'B' : 'Ş'}
+                  </div>
+                )}
               </div>
             ))}
           </div>
           
+          {/* İstifadəçi sətirləri - BÜTÜN GÜNLƏR GÖSTƏRİLİR */}
           {filteredUsers.filter(u => u.role !== 'admin').map(user => (
             <div key={user.id} style={{ 
               display: 'grid', 
@@ -3721,31 +3836,41 @@ function AdminMonthlySchedule({ schedules, users, shiftTypes, selectedMonth, onM
                 fontWeight: '500', 
                 background: 'white',
                 display: 'flex',
-                flexDirection: 'column'
+                flexDirection: 'column',
+                position: 'sticky',
+                left: 0,
+                zIndex: 2,
+                background: 'white'
               }}>
-                <div style={{ fontWeight: '500' }}>{user.name}</div>
+                <div style={{ fontWeight: '600', color: '#1e293b' }}>{user.name}</div>
                 <div style={{ fontSize: '12px', color: '#64748b' }}>
                   {departments[user.department]?.name} • {roles[user.role]?.name}
                 </div>
               </div>
               
-              {Array.from({ length: daysInMonth }, (_, i) => {
-                const date = `${selectedMonth}-${(i + 1).toString().padStart(2, '0')}`;
-                const schedule = monthSchedules.find(s => s.userId === user.id && s.date === date);
+              {allDays.map((dayInfo, i) => {
+                const schedule = monthSchedules.find(s => 
+                  s.userId === user.id && s.date === dayInfo.date
+                );
                 
                 return (
                   <div key={i} style={{ 
                     padding: '10px', 
                     borderRight: '1px solid #e2e8f0',
                     textAlign: 'center',
-                    background: schedule ? '#dbeafe' : 'white',
-                    color: schedule ? '#1e40af' : '#64748b',
+                    background: dayInfo.isToday ? 
+                      'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)' : 
+                      schedule ? '#dbeafe' : (dayInfo.isWeekend ? '#fffbeb' : 'white'),
+                    color: dayInfo.isToday ? 'white' : 
+                           schedule ? '#1e40af' : 
+                           dayInfo.isWeekend ? '#92400e' : '#64748b',
                     fontSize: '12px',
-                    fontWeight: '500',
+                    fontWeight: schedule ? '600' : '400',
                     minWidth: '80px',
                     display: 'flex',
                     alignItems: 'center',
-                    justifyContent: 'center'
+                    justifyContent: 'center',
+                    height: '60px'
                   }}>
                     {schedule ? schedule.shiftName : '-'}
                   </div>
@@ -3755,6 +3880,37 @@ function AdminMonthlySchedule({ schedules, users, shiftTypes, selectedMonth, onM
           ))}
         </div>
       </div>
+
+      {/* Debug info - yalnız development üçün */}
+      {process.env.NODE_ENV === 'development' && (
+        <div style={{ 
+          marginTop: '20px', 
+          padding: '10px', 
+          background: '#f3f4f6', 
+          borderRadius: '6px',
+          fontSize: '12px',
+          color: '#6b7280'
+        }}>
+          <strong>Debug Info:</strong> Gün sayı: {daysInMonth}, İstifadəçi sayı: {filteredUsers.length}, 
+          Növbə sayı: {monthSchedules.length}, Grid: 200px + ({daysInMonth} × 80px) = {200 + (daysInMonth * 80)}px
+        </div>
+      )}
+
+      {/* Boş olduqda mesaj */}
+      {filteredUsers.length === 0 && (
+        <div style={{ 
+          textAlign: 'center', 
+          color: '#64748b', 
+          padding: '40px 20px',
+          background: '#f8fafc',
+          borderRadius: '8px',
+          marginTop: '20px'
+        }}>
+          <div style={{ fontSize: '48px', marginBottom: '16px' }}>👥</div>
+          <h4 style={{ color: '#475569', marginBottom: '8px' }}>İstifadəçi tapılmadı</h4>
+          <p>Axtarış şərtlərinizə uyğun istifadəçi tapılmadı.</p>
+        </div>
+      )}
     </div>
   );
 }
