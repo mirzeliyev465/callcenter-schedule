@@ -1,4 +1,6 @@
 import React, { useEffect, useState, useMemo } from 'react';
+import * as XLSX from 'xlsx';
+import emailjs from 'emailjs-com';
 import { initializeApp } from 'firebase/app';
 import { 
   getAuth, 
@@ -39,6 +41,14 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
+
+const EMAILJS_CONFIG = {
+  SERVICE_ID: 'service_27udt4j',
+  TEMPLATE_ID: 'template_1s8znof', 
+  USER_ID: 'rf2rJAKmOVBh4iQTg'
+};
+
+emailjs.init(EMAILJS_CONFIG.USER_ID);
 
 // Professional Stil Konstantları
 const styles = {
@@ -2448,7 +2458,7 @@ const OperatorDashboard = ({ user, userProfile, users, schedules, shiftChanges, 
           </div>
           <div>
             <h1 style={{ color: 'white', margin: 0, fontSize: '20px', fontWeight: '700' }}>OPERATOR PANEL</h1>
-            <p style={{ color: 'rgba(255,255,255,0.8)', margin: 0, fontSize: '12px' }}>Professional Növbə İdarəetmə Sistemi</p>
+            <p style={{ color: 'rgba(255,255,255,0.8)', margin: 0, fontSize: '12px' }}>Növbə Paneli</p>
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
@@ -4271,139 +4281,427 @@ function AdminApprovals({ shiftChanges, vacations, users, currentUser }) {
   );
 }
 
+
+
 function AdminReports({ schedules, users, selectedMonth, onMonthChange, shiftChanges, vacations, searchTerm, onSearchChange }) {
-  const monthSchedules = schedules.filter(s => s.date?.startsWith(selectedMonth));
-  const filteredUsers = users.filter(user => 
-    user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    user.email.toLowerCase().includes(searchTerm.toLowerCase())
+  // Filtrlənmiş sorğular
+  const filteredShiftChanges = shiftChanges.filter(change => 
+    change.fromUserName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    change.toUserName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    change.fromUserDepartment?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const departmentStats = filteredUsers.reduce((acc, user) => {
-    if (!acc[user.department]) {
-      acc[user.department] = { users: 0, schedules: 0 };
-    }
-    acc[user.department].users++;
-    acc[user.department].schedules += monthSchedules.filter(s => s.userId === user.id).length;
-    return acc;
-  }, {});
+  const filteredVacations = vacations.filter(vacation => 
+    vacation.userName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    vacation.userDepartment?.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  // Excel export funksiyası
+  const exportToExcel = () => {
+    const workbook = XLSX.utils.book_new();
+    
+    // 1. Növbə Dəyişikliyi Sorğuları
+    const shiftChangesData = shiftChanges.map(change => ({
+      'Göndərən Operator': change.fromUserName,
+      'Göndərən Şöbə': change.fromUserDepartment,
+      'Hədəf Operator': change.toUserName,
+      'Hədəf Şöbə': change.toUserDepartment,
+      'Tarix': change.date,
+      'Köhnə Növbə': change.fromShift,
+      'Yeni Növbə': change.toShift,
+      'Köhnə Vaxt': `${change.fromUserStartTime}-${change.fromUserEndTime}`,
+      'Yeni Vaxt': `${change.toUserStartTime}-${change.toUserEndTime}`,
+      'Səbəb': change.reason || '',
+      'Status': change.status === 'approved' ? 'Təsdiqləndi' : 
+                change.status === 'rejected' ? 'Rədd edildi' : 'Gözləyir',
+      'Təsdiqləyən': change.approvedBy || '',
+      'Göndərilmə Tarixi': change.createdAt?.toDate?.().toLocaleDateString('az-AZ') || '',
+      'Təsdiqlənmə Tarixi': change.approvedAt?.toDate?.().toLocaleDateString('az-AZ') || ''
+    }));
+    
+    const shiftChangesSheet = XLSX.utils.json_to_sheet(shiftChangesData);
+    XLSX.utils.book_append_sheet(workbook, shiftChangesSheet, 'Növbə Dəyişiklikləri');
+    
+    // 2. Məzuniyyət Sorğuları
+    const vacationsData = vacations.map(vacation => ({
+      'Operator': vacation.userName,
+      'Şöbə': vacation.userDepartment,
+      'Başlama Tarixi': vacation.startDate,
+      'Bitmə Tarixi': vacation.endDate,
+      'Müddət (gün)': Math.ceil((new Date(vacation.endDate) - new Date(vacation.startDate)) / (1000 * 60 * 60 * 24)) + 1,
+      'Səbəb': vacation.reason || '',
+      'Status': vacation.status === 'approved' ? 'Təsdiqləndi' : 
+                vacation.status === 'rejected' ? 'Rədd edildi' : 'Gözləyir',
+      'Təsdiqləyən': vacation.approvedBy || '',
+      'Göndərilmə Tarixi': vacation.createdAt?.toDate?.().toLocaleDateString('az-AZ') || '',
+      'Təsdiqlənmə Tarixi': vacation.approvedAt?.toDate?.().toLocaleDateString('az-AZ') || ''
+    }));
+    
+    const vacationsSheet = XLSX.utils.json_to_sheet(vacationsData);
+    XLSX.utils.book_append_sheet(workbook, vacationsSheet, 'Məzuniyyət Sorğuları');
+    
+    // Excel faylını yüklə
+    XLSX.writeFile(workbook, `Növbə_Hesabatları_${new Date().toISOString().split('T')[0]}.xlsx`);
+  };
 
   return (
     <div>
-      <h2 style={{ color: '#1e293b', marginBottom: '20px' }}>Hesabatlar və Analitika</h2>
-      
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '15px' }}>
-        <input 
-          type="month" 
-          value={selectedMonth} 
-          onChange={(e) => onMonthChange(e.target.value)} 
-          style={{...styles.input, width: 'auto', margin: 0}}
-        />
-      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+        <h2 style={{ color: '#1e293b', margin: 0, fontSize: '24px', fontWeight: '700' }}>Hesabatlar</h2>
+        
+        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+          {/* Axtarış */}
+          <div style={{ position: 'relative' }}>
+            <input
+              type="text"
+              placeholder="Operator və ya şöbə axtar..."
+              value={searchTerm}
+              onChange={(e) => onSearchChange(e.target.value)}
+              style={{
+                padding: '10px 16px 10px 40px',
+                border: '1px solid #e2e8f0',
+                borderRadius: '8px',
+                fontSize: '14px',
+                width: '280px',
+                background: '#f8fafc'
+              }}
+            />
+            <span style={{
+              position: 'absolute',
+              left: '12px',
+              top: '50%',
+              transform: 'translateY(-50%)',
+              color: '#64748b'
+            }}>
+              🔍
+            </span>
+          </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '20px', marginBottom: '30px' }}>
-        <div style={styles.card}>
-          <h3 style={{ marginBottom: '15px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          {/* Excel Export Düyməsi */}
+          <button 
+            onClick={exportToExcel}
+            style={{ 
+              background: 'linear-gradient(135deg, #10b981 0%, #047857 100%)',
+              color: 'white',
+              border: 'none',
+              padding: '10px 16px',
+              borderRadius: '8px',
+              fontSize: '14px',
+              fontWeight: '600',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              transition: 'all 0.2s ease'
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.transform = 'translateY(-2px)';
+              e.currentTarget.style.boxShadow = '0 4px 12px rgba(16, 185, 129, 0.4)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = 'translateY(0)';
+              e.currentTarget.style.boxShadow = 'none';
+            }}
+          >
             <span>📊</span>
-            <span>Ümumi Statistikalar</span>
-          </h3>
-          <div style={{ display: 'grid', gap: '10px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #e2e8f0' }}>
-              <span>Ümumi İstifadəçilər:</span>
-              <strong style={{ color: '#3b82f6' }}>{filteredUsers.length}</strong>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #e2e8f0' }}>
-              <span>Ay Növbələri:</span>
-              <strong style={{ color: '#10b981' }}>{monthSchedules.length}</strong>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #e2e8f0' }}>
-              <span>Növbə Dəyişiklikləri:</span>
-              <strong style={{ color: '#f59e0b' }}>{shiftChanges.length}</strong>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0' }}>
-              <span>Məzuniyyət Sorğuları:</span>
-              <strong style={{ color: '#ef4444' }}>{vacations.length}</strong>
-            </div>
-          </div>
-        </div>
+            Excel-ə Yüklə
+          </button>
 
-        <div style={styles.card}>
-          <h3 style={{ marginBottom: '15px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span>🏢</span>
-            <span>Şöbə Statistikaları</span>
-          </h3>
-          <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
-            {Object.entries(departmentStats).map(([dept, stats]) => (
-              <div key={dept} style={{ 
-                padding: '12px', 
-                borderBottom: '1px solid #e2e8f0',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center'
-              }}>
-                <div>
-                  <div style={{ fontWeight: '500' }}>{departments[dept]?.name}</div>
-                  <div style={{ fontSize: '12px', color: '#64748b' }}>
-                    {stats.users} istifadəçi • {stats.schedules} növbə
-                  </div>
-                </div>
-                <div style={{ 
-                  background: departments[dept]?.color + '20',
-                  color: departments[dept]?.color,
-                  padding: '6px 12px',
-                  borderRadius: '12px',
-                  fontSize: '12px',
-                  fontWeight: '600'
-                }}>
-                  {Math.round((stats.schedules / (stats.users * 30)) * 100) || 0}%
-                </div>
-              </div>
-            ))}
+          <div style={{ 
+            background: '#f0f9ff', 
+            color: '#0369a1', 
+            padding: '8px 16px', 
+            borderRadius: '12px', 
+            fontSize: '14px',
+            fontWeight: '600',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px'
+          }}>
+            <span>📊</span>
+            <span>Ümumi Sorğular: {shiftChanges.length + vacations.length}</span>
           </div>
         </div>
       </div>
 
+      {/* Növbə Dəyişikliyi Sorğuları */}
       <div style={styles.card}>
-        <h3 style={{ marginBottom: '15px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span>👥</span>
-          <span>İstifadəçi Növbə Statistikası</span>
+        <h3 style={{ 
+          color: '#3b82f6', 
+          marginBottom: '20px', 
+          display: 'flex', 
+          alignItems: 'center', 
+          gap: '10px',
+          fontSize: '18px',
+          fontWeight: '600'
+        }}>
+          <span style={{ 
+            background: '#3b82f6', 
+            color: 'white', 
+            width: '32px', 
+            height: '32px', 
+            borderRadius: '8px', 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'center',
+            fontSize: '16px'
+          }}>🔄</span>
+          <span>Bütün Növbə Dəyişikliyi Sorğuları ({filteredShiftChanges.length})</span>
         </h3>
-        <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
-          {filteredUsers.map(user => {
-            const userSchedules = monthSchedules.filter(s => s.userId === user.id);
-            const userChanges = shiftChanges.filter(c => c.fromUserId === user.id || c.toUserId === user.id);
-            const userVacations = vacations.filter(v => v.userId === user.id);
-            
-            return (
-              <div key={user.id} style={{ 
-                padding: '15px', 
-                borderBottom: '1px solid #e2e8f0',
-                display: 'grid',
-                gridTemplateColumns: '1fr auto auto auto',
-                gap: '15px',
-                alignItems: 'center'
-              }}>
-                <div>
-                  <div style={{ fontWeight: '500' }}>{user.name}</div>
-                  <div style={{ fontSize: '12px', color: '#64748b' }}>
-                    {departments[user.department]?.name} • {roles[user.role]?.name}
-                  </div>
-                </div>
-                <div style={{ textAlign: 'center' }}>
-                  <div style={{ fontSize: '16px', fontWeight: '600', color: '#3b82f6' }}>{userSchedules.length}</div>
-                  <div style={{ fontSize: '12px', color: '#64748b' }}>Növbə</div>
-                </div>
-                <div style={{ textAlign: 'center' }}>
-                  <div style={{ fontSize: '16px', fontWeight: '600', color: '#f59e0b' }}>{userChanges.length}</div>
-                  <div style={{ fontSize: '12px', color: '#64748b' }}>Dəyişiklik</div>
-                </div>
-                <div style={{ textAlign: 'center' }}>
-                  <div style={{ fontSize: '16px', fontWeight: '600', color: '#ef4444' }}>{userVacations.length}</div>
-                  <div style={{ fontSize: '12px', color: '#64748b' }}>Məzuniyyət</div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
+        
+        {filteredShiftChanges.length === 0 ? (
+          <div style={{ textAlign: 'center', color: '#64748b', padding: '40px 20px' }}>
+            <div style={{ fontSize: '48px', marginBottom: '12px', opacity: 0.5 }}>📭</div>
+            <p style={{ fontSize: '15px' }}>Növbə dəyişikliyi sorğusu tapılmadı</p>
+          </div>
+        ) : (
+          <div style={{ overflow: 'auto' }}>
+            <table style={{ 
+              width: '100%', 
+              borderCollapse: 'collapse',
+              minWidth: '1200px'
+            }}>
+              <thead>
+                <tr>
+                  <th style={styles.tableHeader}>Göndərən Operator</th>
+                  <th style={styles.tableHeader}>Hədəf Operator</th>
+                  <th style={styles.tableHeader}>Tarix</th>
+                  <th style={styles.tableHeader}>Növbələr</th>
+                  <th style={styles.tableHeader}>Vaxtlar</th>
+                  <th style={styles.tableHeader}>Səbəb</th>
+                  <th style={styles.tableHeader}>Status</th>
+                  <th style={styles.tableHeader}>Təsdiqləyən</th>
+                  <th style={styles.tableHeader}>Tarixçə</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredShiftChanges.map(change => (
+                  <tr key={change.id} style={{ 
+                    background: change.status === 'pending' ? '#fffbeb' : 
+                               change.status === 'approved' ? '#f0fdf4' : 
+                               change.status === 'rejected' ? '#fef2f2' : 'white'
+                  }}>
+                    <td style={styles.tableCell}>
+                      <div style={{ fontWeight: '600', color: '#1e293b' }}>
+                        {change.fromUserName}
+                      </div>
+                      <div style={{ fontSize: '12px', color: '#64748b' }}>
+                        {change.fromUserDepartment}
+                      </div>
+                    </td>
+                    <td style={styles.tableCell}>
+                      <div style={{ fontWeight: '600', color: '#1e293b' }}>
+                        {change.toUserName}
+                      </div>
+                      <div style={{ fontSize: '12px', color: '#64748b' }}>
+                        {change.toUserDepartment}
+                      </div>
+                    </td>
+                    <td style={styles.tableCell}>
+                      <strong>{change.date}</strong>
+                    </td>
+                    <td style={styles.tableCell}>
+                      <div style={{ 
+                        background: '#f1f5f9', 
+                        padding: '6px 10px', 
+                        borderRadius: '6px', 
+                        fontSize: '12px',
+                        fontWeight: '600',
+                        textAlign: 'center'
+                      }}>
+                        {change.fromShift} → {change.toShift}
+                      </div>
+                    </td>
+                    <td style={styles.tableCell}>
+                      <div style={{ fontSize: '12px', color: '#64748b' }}>
+                        <div>{change.fromUserStartTime}-{change.fromUserEndTime}</div>
+                        <div>↓</div>
+                        <div>{change.toUserStartTime}-{change.toUserEndTime}</div>
+                      </div>
+                    </td>
+                    <td style={styles.tableCell}>
+                      {change.reason ? (
+                        <div style={{ 
+                          maxWidth: '200px',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap'
+                        }} title={change.reason}>
+                          {change.reason}
+                        </div>
+                      ) : '-'}
+                    </td>
+                    <td style={styles.tableCell}>
+                      <span style={{
+                        background: change.status === 'approved' ? 
+                          'linear-gradient(135deg, #10b981 0%, #047857 100%)' : 
+                          change.status === 'rejected' ? 
+                          'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)' : 
+                          'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+                        color: 'white',
+                        padding: '6px 12px',
+                        borderRadius: '20px',
+                        fontSize: '11px',
+                        fontWeight: '600',
+                        display: 'inline-block',
+                        minWidth: '80px',
+                        textAlign: 'center'
+                      }}>
+                        {change.status === 'approved' ? '✅ Təsdiqləndi' : 
+                         change.status === 'rejected' ? '❌ Rədd edildi' : '⏳ Gözləyir'}
+                      </span>
+                    </td>
+                    <td style={styles.tableCell}>
+                      {change.approvedBy || '-'}
+                    </td>
+                    <td style={styles.tableCell}>
+                      <div style={{ fontSize: '11px', color: '#64748b' }}>
+                        <div>📅 Göndərildi: {change.createdAt?.toDate?.().toLocaleDateString('az-AZ')}</div>
+                        {change.approvedAt && (
+                          <div>✅ Təsdiqləndi: {change.approvedAt?.toDate?.().toLocaleDateString('az-AZ')}</div>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Məzuniyyət Sorğuları */}
+      <div style={styles.card}>
+        <h3 style={{ 
+          color: '#10b981', 
+          marginBottom: '20px', 
+          display: 'flex', 
+          alignItems: 'center', 
+          gap: '10px',
+          fontSize: '18px',
+          fontWeight: '600'
+        }}>
+          <span style={{ 
+            background: '#10b981', 
+            color: 'white', 
+            width: '32px', 
+            height: '32px', 
+            borderRadius: '8px', 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'center',
+            fontSize: '16px'
+          }}>🏖️</span>
+          <span>Bütün Məzuniyyət Sorğuları ({filteredVacations.length})</span>
+        </h3>
+        
+        {filteredVacations.length === 0 ? (
+          <div style={{ textAlign: 'center', color: '#64748b', padding: '40px 20px' }}>
+            <div style={{ fontSize: '48px', marginBottom: '12px', opacity: 0.5 }}>🏖️</div>
+            <p style={{ fontSize: '15px' }}>Məzuniyyət sorğusu tapılmadı</p>
+          </div>
+        ) : (
+          <div style={{ overflow: 'auto' }}>
+            <table style={{ 
+              width: '100%', 
+              borderCollapse: 'collapse',
+              minWidth: '1000px'
+            }}>
+              <thead>
+                <tr>
+                  <th style={styles.tableHeader}>Operator</th>
+                  <th style={styles.tableHeader}>Şöbə</th>
+                  <th style={styles.tableHeader}>Başlama</th>
+                  <th style={styles.tableHeader}>Bitmə</th>
+                  <th style={styles.tableHeader}>Müddət</th>
+                  <th style={styles.tableHeader}>Səbəb</th>
+                  <th style={styles.tableHeader}>Status</th>
+                  <th style={styles.tableHeader}>Təsdiqləyən</th>
+                  <th style={styles.tableHeader}>Tarixçə</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredVacations.map(vacation => (
+                  <tr key={vacation.id} style={{ 
+                    background: vacation.status === 'pending' ? '#fffbeb' : 
+                               vacation.status === 'approved' ? '#f0fdf4' : 
+                               vacation.status === 'rejected' ? '#fef2f2' : 'white'
+                  }}>
+                    <td style={styles.tableCell}>
+                      <div style={{ fontWeight: '600', color: '#1e293b' }}>
+                        {vacation.userName}
+                      </div>
+                    </td>
+                    <td style={styles.tableCell}>
+                      {vacation.userDepartment}
+                    </td>
+                    <td style={styles.tableCell}>
+                      <strong>{vacation.startDate}</strong>
+                    </td>
+                    <td style={styles.tableCell}>
+                      <strong>{vacation.endDate}</strong>
+                    </td>
+                    <td style={styles.tableCell}>
+                      <div style={{ 
+                        background: '#f1f5f9', 
+                        padding: '6px 10px', 
+                        borderRadius: '6px', 
+                        fontSize: '12px',
+                        fontWeight: '600',
+                        textAlign: 'center'
+                      }}>
+                        {Math.ceil((new Date(vacation.endDate) - new Date(vacation.startDate)) / (1000 * 60 * 60 * 24)) + 1} gün
+                      </div>
+                    </td>
+                    <td style={styles.tableCell}>
+                      {vacation.reason ? (
+                        <div style={{ 
+                          maxWidth: '200px',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap'
+                        }} title={vacation.reason}>
+                          {vacation.reason}
+                        </div>
+                      ) : '-'}
+                    </td>
+                    <td style={styles.tableCell}>
+                      <span style={{
+                        background: vacation.status === 'approved' ? 
+                          'linear-gradient(135deg, #10b981 0%, #047857 100%)' : 
+                          vacation.status === 'rejected' ? 
+                          'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)' : 
+                          'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+                        color: 'white',
+                        padding: '6px 12px',
+                        borderRadius: '20px',
+                        fontSize: '11px',
+                        fontWeight: '600',
+                        display: 'inline-block',
+                        minWidth: '80px',
+                        textAlign: 'center'
+                      }}>
+                        {vacation.status === 'approved' ? '✅ Təsdiqləndi' : 
+                         vacation.status === 'rejected' ? '❌ Rədd edildi' : '⏳ Gözləyir'}
+                      </span>
+                    </td>
+                    <td style={styles.tableCell}>
+                      {vacation.approvedBy || '-'}
+                    </td>
+                    <td style={styles.tableCell}>
+                      <div style={{ fontSize: '11px', color: '#64748b' }}>
+                        <div>📅 Göndərildi: {vacation.createdAt?.toDate?.().toLocaleDateString('az-AZ')}</div>
+                        {vacation.approvedAt && (
+                          <div>✅ Təsdiqləndi: {vacation.approvedAt?.toDate?.().toLocaleDateString('az-AZ')}</div>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -5039,6 +5337,97 @@ function AdminDashboard({ user, userProfile, users, schedules, shiftTypes, shift
 
   const filteredUsers = getFilteredUsers();
 
+  const sendEmailNotification = async (changeData, targetUser, status) => {
+    try {
+      console.log('📧 Admin email göndərir...', targetUser.email);
+
+      const templateParams = {
+        to_name: targetUser.name,
+        to_email: targetUser.email,
+        from_name: userProfile.name, // Adminin adı
+        change_date: changeData.date,
+        from_shift: changeData.fromShift,
+        to_shift: changeData.toShift,
+        status: status === 'approved' ? 'Təsdiqləndi' : 'Rədd edildi',
+        status_class: status === 'approved' ? 'status-approved' : 'status-rejected',
+        reason: changeData.reason || 'Səbəb qeyd edilməyib',
+        decision_date: new Date().toLocaleDateString('az-AZ')
+      };
+
+      const result = await emailjs.send(
+        EMAILJS_CONFIG.SERVICE_ID,
+        EMAILJS_CONFIG.TEMPLATE_ID,
+        templateParams
+      );
+
+      console.log('✅ Admin email göndərildi:', result.text);
+      return true;
+    } catch (error) {
+      console.error('❌ Admin email xətası:', error);
+      return false;
+    }
+  };
+
+  const adminApproveShiftChange = async (requestId) => {
+    try {
+      const request = shiftChanges.find(r => r.id === requestId);
+      
+      if (!request) {
+        alert('❌ Sorğu tapılmadı!');
+        return;
+      }
+  
+      // 1. Statusu yenilə
+      await updateDoc(doc(db, 'shiftChanges', requestId), {
+        status: 'approved',
+        approvedBy: userProfile.name, // Adminin adı
+        approvedAt: serverTimestamp()
+      });
+  
+      // 2. ✅ EMAIL GÖNDƏR - OPERATORA
+      const targetUser = users.find(u => u.id === request.fromUserId);
+      if (targetUser && targetUser.email) {
+        await sendEmailNotification(request, targetUser, 'approved');
+      }
+  
+      alert('✅ Sorğu təsdiqləndi! Operatora email göndərildi.');
+    } catch (error) {
+      console.error('Admin approval error:', error);
+      alert('❌ Xəta: ' + error.message);
+    }
+  };
+  
+  // ✅ ADMIN RƏDD ETMƏ FUNKSİYASI
+  const adminRejectShiftChange = async (requestId) => {
+    try {
+      const request = shiftChanges.find(r => r.id === requestId);
+      
+      if (!request) {
+        alert('❌ Sorğu tapılmadı!');
+        return;
+      }
+  
+      // 1. Statusu yenilə
+      await updateDoc(doc(db, 'shiftChanges', requestId), {
+        status: 'rejected',
+        approvedBy: userProfile.name, // Adminin adı
+        approvedAt: serverTimestamp(),
+        rejectionReason: 'Admin tərəfindən rədd edildi'
+      });
+  
+      // 2. ✅ EMAIL GÖNDƏR - OPERATORA
+      const targetUser = users.find(u => u.id === request.fromUserId);
+      if (targetUser && targetUser.email) {
+        await sendEmailNotification(request, targetUser, 'rejected');
+      }
+  
+      alert('❌ Sorğu rədd edildi! Operatora email göndərildi.');
+    } catch (error) {
+      console.error('Admin rejection error:', error);
+      alert('❌ Xəta: ' + error.message);
+    }
+  };
+
   const handleAddUser = async () => {
     if (!newUser.name || !newUser.email || !newUser.password) {
       alert('⚠️ Zəhmət olmasa bütün sahələri doldurun!');
@@ -5236,17 +5625,19 @@ function AdminDashboard({ user, userProfile, users, schedules, shiftTypes, shift
           users={filteredUsers}
           currentUser={userProfile}
         />;
-      case 'reports':
-        return <AdminReports 
-          schedules={schedules} 
-          users={filteredUsers} 
-          selectedMonth={selectedMonth} 
-          onMonthChange={setSelectedMonth}
-          shiftChanges={shiftChanges}
-          vacations={vacations}
-          searchTerm={searchTerm}
-          onSearchChange={setSearchTerm}
-        />;
+        case 'reports':
+          return <AdminReports 
+            schedules={schedules} 
+            users={filteredUsers} 
+            selectedMonth={selectedMonth} 
+            onMonthChange={setSelectedMonth}
+            shiftChanges={shiftChanges}
+            vacations={vacations}
+            searchTerm={searchTerm}
+            onSearchChange={setSearchTerm}
+            breaks={breaks} // Əgər fasilələr də varsa əlavə edin
+            breakRequests={breakRequests} // Əgər fasilə sorğuları varsa əlavə edin
+          />
       case 'breaks':
         return <BreakPlanner 
           users={filteredUsers}
