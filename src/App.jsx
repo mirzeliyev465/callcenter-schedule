@@ -232,6 +232,60 @@ const styles = {
     minWidth: '50px',
     height: '50px'
   }
+},
+monthlyDelaysTable: {
+  background: 'white',
+  borderRadius: '16px',
+  overflow: 'hidden',
+  boxShadow: '0 8px 30px rgba(0,0,0,0.08)',
+  marginBottom: '24px'
+},
+delayInput: {
+  width: '70px',
+  padding: '8px',
+  border: '2px solid #e2e8f0',
+  borderRadius: '8px',
+  textAlign: 'center',
+  fontSize: '14px',
+  fontWeight: '600'
+},
+highlightCell: {
+  background: '#fff3cd',
+  border: '2px solid #ffc107',
+  fontWeight: 'bold',
+  color: '#856404'
+},
+reportModal: {
+  position: 'fixed',
+  top: '50%',
+  left: '50%',
+  transform: 'translate(-50%, -50%)',
+  width: '90%',
+  maxWidth: '1000px',
+  background: 'white',
+  borderRadius: '16px',
+  boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+  zIndex: 1000,
+  maxHeight: '90vh',
+  overflow: 'auto'
+},
+excelTable: {
+  border: '1px solid #ddd',
+  width: '100%',
+  borderCollapse: 'collapse'
+},
+excelHeader: {
+  background: '#f5f5f5',
+  border: '1px solid #ddd',
+  padding: '10px',
+  textAlign: 'left',
+  fontWeight: '600'
+},
+excelCell: {
+  border: '1px solid #ddd',
+  padding: '8px',
+  fontSize: '13px'
+}
 };
 // Şöbələr
 const departments = {
@@ -307,6 +361,13 @@ function App() {
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [authError, setAuthError] = useState('');
+
+  const [monthlyDelays, setMonthlyDelays] = useState([]);
+  const [showDelayReport, setShowDelayReport] = useState(false);
+  const [selectedDelayOperator, setSelectedDelayOperator] = useState(null);
+  const [showDelayConfirmation, setShowDelayConfirmation] = useState(false);
+  const [pendingDelayData, setPendingDelayData] = useState(null);
+  const [currentDelayMonth, setCurrentDelayMonth] = useState(new Date().toISOString().slice(0, 7));
 
   // Real-time listeners
   useEffect(() => {
@@ -396,6 +457,27 @@ function App() {
           console.error('Breaks listener xətası:', error);
         }
       );
+
+      const monthlyDelaysQuery = query(collection(db, 'monthlyDelays'));
+    const unsubscribeMonthlyDelays = onSnapshot(monthlyDelaysQuery,
+      (snapshot) => {
+        const delaysList = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        setMonthlyDelays(delaysList);
+      },
+      (error) => {
+        console.error('Monthly delays listener xətası:', error);
+      }
+    );
+
+    return () => {
+      // ... digər unsubscribe-lar
+      unsubscribeMonthlyDelays(); // ƏLAVƏ EDİN
+    };
+  }
+}, [userProfile]);
 
       // Break requests listener
       const breakRequestsQuery = query(collection(db, 'breakRequests'));
@@ -497,7 +579,43 @@ function App() {
       console.error('❌ ShiftTypes initialization error:', error);
     }
   };
+  const handleDelayUpdate = async (operatorId, date, delayMinutes, reason = '') => {
+    try {
+      const isPastDate = new Date(date) < new Date();
+      
+      if (isPastDate && delayMinutes > 0) {
+        setPendingDelayData({ operatorId, date, delayMinutes, reason });
+        setShowDelayConfirmation(true);
+        return;
+      }
+      
+      await saveDelayToFirebase(operatorId, date, delayMinutes, reason);
+    } catch (error) {
+      console.error('Delay update error:', error);
+    }
+  };
 
+  const saveDelayToFirebase = async (operatorId, date, delayMinutes, reason) => {
+    const delayDocRef = doc(db, 'monthlyDelays', `${operatorId}_${date}`);
+    const delayData = {
+      operatorId,
+      date,
+      delayMinutes: parseInt(delayMinutes),
+      reason,
+      recordedBy: userProfile.name,
+      recordedAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
+    };
+    
+    await setDoc(delayDocRef, delayData, { merge: true });
+  };
+
+  const showOperatorDelayReport = (operator) => {
+    setSelectedDelayOperator(operator);
+    setShowDelayReport(true);
+  };
+
+  // BURADAN SONRA handleLogin funksiyası gəlir
   const handleLogin = async (e) => {
     e.preventDefault();
     setAuthError('');
@@ -2714,7 +2832,39 @@ const OperatorDashboard = ({ user, userProfile, users, schedules, shiftChanges, 
                 </select>
               </div>
             )}
+            {showDelayReport && selectedDelayOperator && (
+              <DelayReportModal 
+                operator={selectedDelayOperator}
+                delays={monthlyDelays}
+                onClose={() => setShowDelayReport(false)}
+                currentMonth={currentDelayMonth}
+              />
+            )}
+
+            {showDelayConfirmation && pendingDelayData && (
+              <DelayConfirmationModal 
+                data={pendingDelayData}
+                onConfirm={() => {
+                  saveDelayToFirebase(
+                    pendingDelayData.operatorId, 
+                    pendingDelayData.date, 
+                    pendingDelayData.delayMinutes, 
+                    pendingDelayData.reason
+                  );
+                  setShowDelayConfirmation(false);
+                  setPendingDelayData(null);
+                }}
+                onCancel={() => {
+                  setShowDelayConfirmation(false);
+                  setPendingDelayData(null);
+                }}
+              />
+            )}
+          </div>
+        </div>
+      )}
             
+
             <div style={{ marginBottom: '20px' }}>
               <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', color: '#374151', fontSize: '14px' }}>
                 📅 Tarix
@@ -3689,6 +3839,620 @@ function SchedulePlanner({ users, schedules, shiftTypes, currentUser }) {
     </div>
   );
 }
+// ƏLAVƏ EDİN: Aylıq Gecikmələr Komponenti - faylın sonuna
+function MonthlyDelaysSection({ operators, delays, currentMonth, onDelayUpdate, onShowReport, userProfile, onMonthChange }) {
+  const [searchTerm, setSearchTerm] = useState('');
+  
+  const getDaysInMonth = () => {
+    const [year, month] = currentMonth.split('-').map(Number);
+    return new Date(year, month, 0).getDate();
+  };
+
+  const daysInMonth = getDaysInMonth();
+  
+  const filteredOperators = operators.filter(operator => 
+    operator.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    operator.email.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  const getOperatorDelayStats = (operatorId) => {
+    const operatorDelays = delays.filter(delay => 
+      delay.operatorId === operatorId && 
+      delay.date.startsWith(currentMonth)
+    );
+    
+    const totalDelay = operatorDelays.reduce((sum, delay) => sum + (delay.delayMinutes || 0), 0);
+    const delayCount = operatorDelays.length;
+    
+    return { totalDelay, delayCount };
+  };
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
+        <h2 style={{ color: '#1e293b', margin: 0, fontSize: '24px', fontWeight: '700' }}>
+          📊 Aylıq Gecikmələr
+        </h2>
+        
+        <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
+          <input 
+            type="month" 
+            value={currentMonth} 
+            onChange={(e) => onMonthChange(e.target.value)} 
+            style={{
+              ...styles.input, 
+              width: 'auto', 
+              margin: 0,
+              minWidth: '140px'
+            }}
+          />
+          
+          <div style={{ 
+            background: '#f0f9ff', 
+            color: '#0369a1', 
+            padding: '8px 16px', 
+            borderRadius: '12px', 
+            fontSize: '14px',
+            fontWeight: '600',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px'
+          }}>
+            <span>📅</span>
+            <span>{daysInMonth} gün</span>
+          </div>
+        </div>
+      </div>
+
+      <div style={{ marginBottom: '24px' }}>
+        <input
+          style={styles.searchBox}
+          placeholder="🔍 Operator axtar..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+        />
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '20px', marginBottom: '24px' }}>
+        <div style={{ ...styles.card, textAlign: 'center', background: 'linear-gradient(135deg, #fef3c7 0%, #fef3c7 100%)' }}>
+          <div style={{ fontSize: '3rem', marginBottom: '10px' }}>👥</div>
+          <h3 style={{ color: '#92400e', marginBottom: '10px' }}>Operatorlar</h3>
+          <div style={{ fontSize: '2.5rem', fontWeight: 'bold', color: '#92400e' }}>{filteredOperators.length}</div>
+        </div>
+        
+        <div style={{ ...styles.card, textAlign: 'center', background: 'linear-gradient(135deg, #fee2e2 0%, #fecaca 100%)' }}>
+          <div style={{ fontSize: '3rem', marginBottom: '10px' }}>⏰</div>
+          <h3 style={{ color: '#dc2626', marginBottom: '10px' }}>Ümumi Gecikmə</h3>
+          <div style={{ fontSize: '2.5rem', fontWeight: 'bold', color: '#dc2626' }}>
+            {delays.filter(d => d.date.startsWith(currentMonth)).reduce((sum, d) => sum + (d.delayMinutes || 0), 0)} dəq
+          </div>
+        </div>
+        
+        <div style={{ ...styles.card, textAlign: 'center', background: 'linear-gradient(135deg, #dbeafe 0%, #eff6ff 100%)' }}>
+          <div style={{ fontSize: '3rem', marginBottom: '10px' }}>📋</div>
+          <h3 style={{ color: '#1e40af', marginBottom: '10px' }}>Gecikmə Sayı</h3>
+          <div style={{ fontSize: '2.5rem', fontWeight: 'bold', color: '#1e40af' }}>
+            {delays.filter(d => d.date.startsWith(currentMonth)).length}
+          </div>
+        </div>
+      </div>
+
+      <div style={styles.monthlyDelaysTable}>
+        <div style={{ overflowX: 'auto' }}>
+          <div style={{ minWidth: `${250 + (daysInMonth * 80)}px` }}>
+            <div style={{ 
+              display: 'grid', 
+              gridTemplateColumns: `250px repeat(${daysInMonth}, 80px)`, 
+              background: 'linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)',
+              borderBottom: '2px solid #e2e8f0'
+            }}>
+              <div style={{ 
+                padding: '16px 20px', 
+                fontWeight: '600', 
+                borderRight: '1px solid #e2e8f0',
+                fontSize: '14px',
+                color: '#374151',
+                position: 'sticky',
+                left: 0,
+                background: 'linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)',
+                zIndex: 11
+              }}>
+                <div>Operator</div>
+                <div style={{ fontSize: '12px', color: '#64748b', fontWeight: '400', marginTop: '4px' }}>
+                  Gecikmə statistikası
+                </div>
+              </div>
+              
+              {Array.from({ length: daysInMonth }, (_, i) => {
+                const day = i + 1;
+                const date = `${currentMonth}-${day.toString().padStart(2, '0')}`;
+                const isWeekend = new Date(date).getDay() === 0 || new Date(date).getDay() === 6;
+                const isToday = new Date().toDateString() === new Date(date).toDateString();
+                const isPast = new Date(date) < new Date();
+                
+                return (
+                  <div key={i} style={{ 
+                    padding: '12px 8px', 
+                    fontWeight: '600', 
+                    borderRight: '1px solid #e2e8f0',
+                    textAlign: 'center',
+                    minWidth: '80px',
+                    fontSize: '12px',
+                    background: isToday ? 
+                      'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)' : 
+                      isWeekend ? '#fef3c7' : '#f8fafc',
+                    color: isToday ? 'white' : isWeekend ? '#92400e' : '#374151',
+                    position: 'relative'
+                  }}>
+                    {day}
+                    {isToday && (
+                      <div style={{
+                        position: 'absolute',
+                        top: '2px',
+                        right: '2px',
+                        width: '6px',
+                        height: '6px',
+                        background: 'white',
+                        borderRadius: '50%'
+                      }}></div>
+                    )}
+                    {isPast && (
+                      <div style={{
+                        position: 'absolute',
+                        bottom: '2px',
+                        left: '50%',
+                        transform: 'translateX(-50%)',
+                        width: '4px',
+                        height: '4px',
+                        background: '#6b7280',
+                        borderRadius: '50%'
+                      }}></div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            
+            {filteredOperators.map(operator => {
+              const stats = getOperatorDelayStats(operator.id);
+              
+              return (
+                <div key={operator.id} style={{ 
+                  display: 'grid', 
+                  gridTemplateColumns: `250px repeat(${daysInMonth}, 80px)`,
+                  borderBottom: '1px solid #f1f5f9',
+                  background: 'white',
+                  transition: 'all 0.2s ease'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = '#f8fafc';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'white';
+                }}>
+                  
+                  <div style={{ 
+                    padding: '12px 20px', 
+                    borderRight: '1px solid #f1f5f9', 
+                    background: 'inherit',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    fontSize: '14px',
+                    position: 'sticky',
+                    left: 0,
+                    zIndex: 5,
+                    background: 'inherit'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <div style={{ 
+                        width: '32px', 
+                        height: '32px', 
+                        background: 'linear-gradient(135deg, #dc2626 0%, #b91c1c 100%)', 
+                        borderRadius: '8px', 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        justifyContent: 'center',
+                        color: 'white',
+                        fontSize: '12px',
+                        fontWeight: '600'
+                      }}>
+                        {operator.name.split(' ').map(n => n[0]).join('').toUpperCase()}
+                      </div>
+                      <div>
+                        <div style={{ fontWeight: '600', color: '#1e293b' }}>{operator.name}</div>
+                        <div style={{ fontSize: '12px', color: '#64748b' }}>{operator.email.split('@')[0]}</div>
+                      </div>
+                    </div>
+                    
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
+                      <div style={{ 
+                        background: '#fee2e2', 
+                        color: '#dc2626', 
+                        padding: '4px 8px', 
+                        borderRadius: '6px', 
+                        fontSize: '11px',
+                        fontWeight: '600'
+                      }}>
+                        {stats.delayCount} gecikmə
+                      </div>
+                      <div style={{ 
+                        background: '#fef3c7', 
+                        color: '#92400e', 
+                        padding: '4px 8px', 
+                        borderRadius: '6px', 
+                        fontSize: '11px',
+                        fontWeight: '600'
+                      }}>
+                        {stats.totalDelay} dəq
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {Array.from({ length: daysInMonth }, (_, i) => {
+                    const day = i + 1;
+                    const date = `${currentMonth}-${day.toString().padStart(2, '0')}`;
+                    const isPast = new Date(date) < new Date();
+                    const isToday = new Date().toDateString() === new Date(date).toDateString();
+                    const delay = delays.find(d => 
+                      d.operatorId === operator.id && d.date === date
+                    );
+                    
+                    return (
+                      <div key={day} style={{ 
+                        padding: '8px 4px', 
+                        borderRight: '1px solid #f1f5f9',
+                        textAlign: 'center',
+                        background: isToday ? 
+                          'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)' : 
+                          delay ? '#fee2e2' : 'inherit',
+                        minWidth: '80px',
+                        position: 'relative'
+                      }}>
+                        <input
+                          type="number"
+                          min="0"
+                          max="480"
+                          placeholder="0"
+                          value={delay?.delayMinutes || ''}
+                          onChange={(e) => onDelayUpdate(operator.id, date, e.target.value)}
+                          style={{
+                            ...styles.delayInput,
+                            background: delay ? '#fee2e2' : (isPast ? '#f3f4f6' : 'white'),
+                            borderColor: delay ? '#dc2626' : (isPast ? '#d1d5db' : '#e2e8f0'),
+                            color: delay ? '#dc2626' : '#64748b',
+                            cursor: isPast ? 'not-allowed' : 'text'
+                          }}
+                          disabled={!isPast}
+                        />
+                        
+                        {delay && (
+                          <div style={{
+                            position: 'absolute',
+                            bottom: '2px',
+                            left: '50%',
+                            transform: 'translateX(-50%)',
+                            width: '6px',
+                            height: '6px',
+                            background: '#dc2626',
+                            borderRadius: '50%'
+                          }}></div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      {filteredOperators.length === 0 && (
+        <div style={{ 
+          textAlign: 'center', 
+          color: '#64748b', 
+          padding: '60px 40px',
+          background: '#f8fafc',
+          borderRadius: '16px',
+          border: '2px dashed #e2e8f0'
+        }}>
+          <div style={{ fontSize: '64px', marginBottom: '16px', opacity: 0.5 }}>👥</div>
+          <h4 style={{ color: '#475569', marginBottom: '12px', fontSize: '18px', fontWeight: '600' }}>
+            Operator tapılmadı
+          </h4>
+          <p style={{ fontSize: '14px', opacity: 0.7 }}>
+            Axtarış şərtlərinizə uyğun operator tapılmadı
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+function DelayReportModal({ operator, delays, onClose, currentMonth }) {
+  const operatorDelays = delays.filter(delay => 
+    delay.operatorId === operator.id && 
+    delay.date.startsWith(currentMonth) &&
+    delay.delayMinutes > 0
+  );
+
+  const totalDelay = operatorDelays.reduce((sum, delay) => sum + (delay.delayMinutes || 0), 0);
+  const averageDelay = operatorDelays.length > 0 ? Math.round(totalDelay / operatorDelays.length) : 0;
+
+  const exportToExcel = () => {
+    const workbook = XLSX.utils.book_new();
+    
+    const reportData = operatorDelays.map((delay, index) => ({
+      '№': index + 1,
+      'Tarix': delay.date,
+      'Gecikmə (dəq)': delay.delayMinutes,
+      'Səbəb': delay.reason || 'Səbəb qeyd edilməyib',
+      'Qeyd Edən': delay.recordedBy || 'Sistem',
+      'Qeyd Tarixi': delay.recordedAt?.toDate?.().toLocaleString('az-AZ') || 'Tarix yoxdur'
+    }));
+
+    const summaryData = [{
+      '№': 'ÜMUMİ',
+      'Tarix': `Cəmi: ${operatorDelays.length} gecikmə`,
+      'Gecikmə (dəq)': totalDelay,
+      'Səbəb': `Ortalama: ${averageDelay} dəq`,
+      'Qeyd Edən': '',
+      'Qeyd Tarixi': ''
+    }];
+
+    const allData = [...reportData, ...summaryData];
+    
+    const worksheet = XLSX.utils.json_to_sheet(allData);
+    
+    const colWidths = [
+      { wch: 5 },   // №
+      { wch: 12 },  // Tarix
+      { wch: 15 },  // Gecikmə
+      { wch: 30 },  // Səbəb
+      { wch: 20 },  // Qeyd Edən
+      { wch: 20 }   // Qeyd Tarixi
+    ];
+    worksheet['!cols'] = colWidths;
+    
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Gecikmə Hesabatı');
+
+    const fileName = `${operator.name}_Gecikmə_Hesabatı_${currentMonth}.xlsx`;
+    XLSX.writeFile(workbook, fileName);
+    
+    alert(`✅ Excel hesabatı uğurla yükləndi: ${fileName}`);
+  };
+
+  return (
+    <div style={styles.modal}>
+      <div style={styles.reportModal}>
+        <div style={{ 
+          display: 'flex', 
+          justifyContent: 'space-between', 
+          alignItems: 'center', 
+          marginBottom: '24px',
+          paddingBottom: '16px',
+          borderBottom: '2px solid #e2e8f0'
+        }}>
+          <h2 style={{ color: '#1e293b', margin: 0, fontSize: '24px', fontWeight: '700' }}>
+            📈 Gecikmə Hesabatı - {operator.name}
+          </h2>
+          <button 
+            onClick={onClose}
+            style={{ 
+              background: 'none', 
+              border: 'none', 
+              fontSize: '24px', 
+              cursor: 'pointer', 
+              color: '#64748b',
+              width: '40px',
+              height: '40px',
+              borderRadius: '8px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              transition: 'all 0.2s ease'
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = '#f1f5f9';
+            }}
+          >
+            ✕
+          </button>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '24px' }}>
+          <div style={{ ...styles.card, textAlign: 'center', background: 'linear-gradient(135deg, #fee2e2 0%, #fecaca 100%)' }}>
+            <div style={{ fontSize: '2rem', marginBottom: '8px' }}>⏰</div>
+            <div style={{ fontSize: '14px', color: '#dc2626', fontWeight: '600' }}>Ümumi Gecikmə</div>
+            <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#dc2626' }}>{totalDelay} dəq</div>
+          </div>
+          
+          <div style={{ ...styles.card, textAlign: 'center', background: 'linear-gradient(135deg, #fef3c7 0%, #fef3c7 100%)' }}>
+            <div style={{ fontSize: '2rem', marginBottom: '8px' }}>📊</div>
+            <div style={{ fontSize: '14px', color: '#92400e', fontWeight: '600' }}>Gecikmə Sayı</div>
+            <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#92400e' }}>{operatorDelays.length}</div>
+          </div>
+          
+          <div style={{ ...styles.card, textAlign: 'center', background: 'linear-gradient(135deg, #dbeafe 0%, #eff6ff 100%)' }}>
+            <div style={{ fontSize: '2rem', marginBottom: '8px' }}>📈</div>
+            <div style={{ fontSize: '14px', color: '#1e40af', fontWeight: '600' }}>Ortalama</div>
+            <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#1e40af' }}>{averageDelay} dəq</div>
+          </div>
+        </div>
+
+        <div style={styles.card}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+            <h3 style={{ color: '#1e293b', margin: 0, fontSize: '18px', fontWeight: '600' }}>
+              📋 Gecikmə Tarixçəsi
+            </h3>
+            <button 
+              onClick={exportToExcel}
+              style={{ 
+                ...styles.button, 
+                background: 'linear-gradient(135deg, #10b981 0%, #047857 100%)', 
+                color: 'white',
+                fontWeight: '600'
+              }}
+            >
+              📥 Excel-ə Export
+            </button>
+          </div>
+
+          <div style={{ overflowX: 'auto' }}>
+            <table style={styles.excelTable}>
+              <thead>
+                <tr>
+                  <th style={styles.excelHeader}>№</th>
+                  <th style={styles.excelHeader}>Tarix</th>
+                  <th style={styles.excelHeader}>Gecikmə (dəq)</th>
+                  <th style={styles.excelHeader}>Səbəb</th>
+                  <th style={styles.excelHeader}>Qeyd Edən</th>
+                  <th style={styles.excelHeader}>Qeyd Tarixi</th>
+                </tr>
+              </thead>
+              <tbody>
+                {operatorDelays.map((delay, index) => (
+                  <tr key={delay.id}>
+                    <td style={styles.excelCell}>{index + 1}</td>
+                    <td style={styles.excelCell}>
+                      <strong>{delay.date}</strong>
+                    </td>
+                    <td style={{ ...styles.excelCell, color: '#dc2626', fontWeight: 'bold' }}>
+                      {delay.delayMinutes} dəq
+                    </td>
+                    <td style={styles.excelCell}>
+                      {delay.reason || 'Səbəb qeyd edilməyib'}
+                    </td>
+                    <td style={styles.excelCell}>
+                      {delay.recordedBy || 'Sistem'}
+                    </td>
+                    <td style={styles.excelCell}>
+                      {delay.recordedAt?.toDate?.().toLocaleString('az-AZ') || 'Tarix yoxdur'}
+                    </td>
+                  </tr>
+                ))}
+                {operatorDelays.length === 0 && (
+                  <tr>
+                    <td colSpan="6" style={{ ...styles.excelCell, textAlign: 'center', color: '#64748b' }}>
+                      📭 Bu ay üçün gecikmə qeydi yoxdur
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+              {operatorDelays.length > 0 && (
+                <tfoot>
+                  <tr style={{ background: '#f8fafc' }}>
+                    <td style={{ ...styles.excelCell, fontWeight: 'bold' }}>ÜMUMİ</td>
+                    <td style={{ ...styles.excelCell, fontWeight: 'bold' }}>
+                      {operatorDelays.length} gecikmə
+                    </td>
+                    <td style={{ ...styles.excelCell, color: '#dc2626', fontWeight: 'bold' }}>
+                      {totalDelay} dəq
+                    </td>
+                    <td style={{ ...styles.excelCell, fontWeight: 'bold' }}>
+                      Orta: {averageDelay} dəq
+                    </td>
+                    <td style={styles.excelCell} colSpan="2"></td>
+                  </tr>
+                </tfoot>
+              )}
+            </table>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '24px', gap: '12px' }}>
+          <button 
+            onClick={onClose}
+            style={{ 
+              ...styles.button, 
+              background: '#6b7280', 
+              color: 'white',
+              fontWeight: '600'
+            }}
+          >
+            ❌ Bağla
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ƏLAVƏ EDİN: Gecikmə Təsdiq Modalı - DelayReportModal-dən SONRA
+function DelayConfirmationModal({ data, onConfirm, onCancel }) {
+  return (
+    <div style={styles.modal}>
+      <div style={styles.modalContent}>
+        <div style={{ textAlign: 'center', marginBottom: '24px' }}>
+          <div style={{ fontSize: '64px', marginBottom: '16px' }}>⚠️</div>
+          <h3 style={{ color: '#dc2626', marginBottom: '12px', fontSize: '20px', fontWeight: '700' }}>
+            Diqqət!
+          </h3>
+        </div>
+
+        <div style={{ 
+          background: '#fef3c7', 
+          color: '#92400e', 
+          padding: '16px', 
+          borderRadius: '12px', 
+          marginBottom: '24px',
+          border: '1px solid #f59e0b'
+        }}>
+          <p style={{ margin: '0 0 12px 0', fontWeight: '600' }}>
+            <strong>{data.date}</strong> tarixli növbə üçün <strong>{data.delayMinutes} dəqiqə</strong> gecikmə qeyd edirsiniz.
+          </p>
+          <p style={{ margin: 0, fontSize: '14px' }}>
+            Bu müddət artıq keçib. Dəyişiklik etmək istədiyinizə əminsiniz?
+          </p>
+        </div>
+
+        {data.reason && (
+          <div style={{ 
+            background: '#f8fafc', 
+            padding: '12px 16px', 
+            borderRadius: '8px', 
+            marginBottom: '20px',
+            border: '1px solid #e2e8f0'
+          }}>
+            <strong>📝 Səbəb:</strong> {data.reason}
+          </div>
+        )}
+
+        <div style={{ display: 'flex', gap: '12px', marginTop: '24px' }}>
+          <button 
+            onClick={onConfirm}
+            style={{ 
+              ...styles.button, 
+              background: 'linear-gradient(135deg, #10b981 0%, #047857 100%)', 
+              color: 'white', 
+              flex: 1,
+              fontWeight: '600',
+              fontSize: '15px',
+              padding: '14px'
+            }}
+          >
+            ✅ Bəli, Qeyd Et
+          </button>
+          <button 
+            onClick={onCancel}
+            style={{ 
+              ...styles.button, 
+              background: '#f8fafc', 
+              color: '#64748b', 
+              flex: 1, 
+              fontWeight: '600',
+              fontSize: '15px',
+              padding: '14px',
+              border: '1px solid #e2e8f0'
+            }}
+          >
+            ❌ Xeyr, Ləğv Et
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function AdminMonthlySchedule({ schedules, users, shiftTypes, selectedMonth, onMonthChange, searchTerm, onSearchChange }) {
   // Ayın gün sayını hesabla
@@ -4456,129 +5220,194 @@ function AdminReports({ schedules, users, selectedMonth, onMonthChange, shiftCha
   const exportToExcel = () => {
     const workbook = XLSX.utils.book_new();
     
-    // 1. Növbə Dəyişikliyi Sorğuları
-    const shiftChangesData = shiftChanges.map(change => ({
-      'Göndərən Operator': change.fromUserName,
-      'Göndərən Şöbə': change.fromUserDepartment,
-      'Hədəf Operator': change.toUserName,
-      'Hədəf Şöbə': change.toUserDepartment,
-      'Tarix': change.date,
-      'Köhnə Növbə': change.fromShift,
-      'Yeni Növbə': change.toShift,
-      'Köhnə Vaxt': `${change.fromUserStartTime}-${change.fromUserEndTime}`,
-      'Yeni Vaxt': `${change.toUserStartTime}-${change.toUserEndTime}`,
-      'Səbəb': change.reason || '',
-      'Status': change.status === 'approved' ? 'Təsdiqləndi' : 
-                change.status === 'rejected' ? 'Rədd edildi' : 'Gözləyir',
-      'Təsdiqləyən': change.approvedBy || '',
-      'Göndərilmə Tarixi': change.createdAt?.toDate?.().toLocaleDateString('az-AZ') || '',
-      'Təsdiqlənmə Tarixi': change.approvedAt?.toDate?.().toLocaleDateString('az-AZ') || ''
+    // 1. NÖVBƏ DƏYİŞİKLİYİ SORĞULARI - PROFESSIONAL
+    const shiftChangesData = shiftChanges.map((change, index) => ({
+      '№': index + 1,
+      'Göndərən Operator': change.fromUserName || 'Məlumat yoxdur',
+      'Göndərən Şöbə': change.fromUserDepartment || 'Məlumat yoxdur',
+      'Hədəf Operator': change.toUserName || 'Məlumat yoxdur',
+      'Hədəf Şöbə': change.toUserDepartment || 'Məlumat yoxdur',
+      'Tarix': change.date || 'Tarix yoxdur',
+      'Köhnə Növbə': change.fromShift || '-',
+      'Yeni Növbə': change.toShift || '-',
+      'Köhnə Vaxt': change.fromUserStartTime && change.fromUserEndTime 
+        ? `${change.fromUserStartTime}-${change.fromUserEndTime}` 
+        : 'Vaxt yoxdur',
+      'Yeni Vaxt': change.toUserStartTime && change.toUserEndTime 
+        ? `${change.toUserStartTime}-${change.toUserEndTime}` 
+        : 'Vaxt yoxdur',
+      'Səbəb': change.reason || 'Səbəb qeyd edilməyib',
+      'Status': getStatusText(change.status),
+      'Təsdiqləyən': change.approvedBy || 'Təsdiqlənməyib',
+      'Göndərilmə Tarixi': change.createdAt?.toDate?.().toLocaleDateString('az-AZ') || 'Tarix yoxdur',
+      'Təsdiqlənmə Tarixi': change.approvedAt?.toDate?.().toLocaleDateString('az-AZ') || 'Təsdiqlənməyib'
     }));
     
     const shiftChangesSheet = XLSX.utils.json_to_sheet(shiftChangesData);
+    
+    // Sütun enlərini professional tənzimlə
+    const shiftChangesColWidths = [
+      { wch: 5 },   // №
+      { wch: 22 },  // Göndərən Operator
+      { wch: 18 },  // Göndərən Şöbə
+      { wch: 22 },  // Hədəf Operator
+      { wch: 18 },  // Hədəf Şöbə
+      { wch: 12 },  // Tarix
+      { wch: 14 },  // Köhnə Növbə
+      { wch: 14 },  // Yeni Növbə
+      { wch: 16 },  // Köhnə Vaxt
+      { wch: 16 },  // Yeni Vaxt
+      { wch: 30 },  // Səbəb
+      { wch: 15 },  // Status
+      { wch: 20 },  // Təsdiqləyən
+      { wch: 18 },  // Göndərilmə Tarixi
+      { wch: 18 },  // Təsdiqlənmə Tarixi
+    ];
+    shiftChangesSheet['!cols'] = shiftChangesColWidths;
+    
+    // Başlıq stilini əlavə et
+    if (!shiftChangesSheet['!merges']) shiftChangesSheet['!merges'] = [];
+    shiftChangesSheet['!merges'].push({ s: { r: 0, c: 0 }, e: { r: 0, c: 14 } });
+    
     XLSX.utils.book_append_sheet(workbook, shiftChangesSheet, 'Növbə Dəyişiklikləri');
     
-    // 2. Məzuniyyət Sorğuları
-    const vacationsData = vacations.map(vacation => ({
-      'Operator': vacation.userName,
-      'Şöbə': vacation.userDepartment,
-      'Başlama Tarixi': vacation.startDate,
-      'Bitmə Tarixi': vacation.endDate,
-      'Müddət (gün)': Math.ceil((new Date(vacation.endDate) - new Date(vacation.startDate)) / (1000 * 60 * 60 * 24)) + 1,
-      'Səbəb': vacation.reason || '',
-      'Status': vacation.status === 'approved' ? 'Təsdiqləndi' : 
-                vacation.status === 'rejected' ? 'Rədd edildi' : 'Gözləyir',
-      'Təsdiqləyən': vacation.approvedBy || '',
-      'Göndərilmə Tarixi': vacation.createdAt?.toDate?.().toLocaleDateString('az-AZ') || '',
-      'Təsdiqlənmə Tarixi': vacation.approvedAt?.toDate?.().toLocaleDateString('az-AZ') || ''
-    }));
+    // 2. MƏZUNİYYƏT SORĞULARI - PROFESSIONAL
+    const vacationsData = vacations.map((vacation, index) => {
+      const startDate = new Date(vacation.startDate);
+      const endDate = new Date(vacation.endDate);
+      const daysCount = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24)) + 1;
+      
+      return {
+        '№': index + 1,
+        'Operator': vacation.userName || 'Məlumat yoxdur',
+        'Şöbə': vacation.userDepartment || 'Məlumat yoxdur',
+        'Başlama Tarixi': vacation.startDate || 'Tarix yoxdur',
+        'Bitmə Tarixi': vacation.endDate || 'Tarix yoxdur',
+        'Müddət (gün)': daysCount,
+        'Səbəb': vacation.reason || 'Səbəb qeyd edilməyib',
+        'Status': getStatusText(vacation.status),
+        'Təsdiqləyən': vacation.approvedBy || 'Təsdiqlənməyib',
+        'Göndərilmə Tarixi': vacation.createdAt?.toDate?.().toLocaleDateString('az-AZ') || 'Tarix yoxdur',
+        'Təsdiqlənmə Tarixi': vacation.approvedAt?.toDate?.().toLocaleDateString('az-AZ') || 'Təsdiqlənməyib'
+      };
+    });
     
     const vacationsSheet = XLSX.utils.json_to_sheet(vacationsData);
+    
+    // Sütun enlərini professional tənzimlə
+    const vacationsColWidths = [
+      { wch: 5 },   // №
+      { wch: 22 },  // Operator
+      { wch: 18 },  // Şöbə
+      { wch: 16 },  // Başlama Tarixi
+      { wch: 16 },  // Bitmə Tarixi
+      { wch: 12 },  // Müddət
+      { wch: 30 },  // Səbəb
+      { wch: 15 },  // Status
+      { wch: 20 },  // Təsdiqləyən
+      { wch: 18 },  // Göndərilmə Tarixi
+      { wch: 18 },  // Təsdiqlənmə Tarixi
+    ];
+    vacationsSheet['!cols'] = vacationsColWidths;
+    
     XLSX.utils.book_append_sheet(workbook, vacationsSheet, 'Məzuniyyət Sorğuları');
     
-    // Excel faylını yüklə
-    XLSX.writeFile(workbook, `Növbə_Hesabatları_${new Date().toISOString().split('T')[0]}.xlsx`);
+    // 3. AYLIQ NÖVBƏ CƏDVƏLİ - PROFESSIONAL
+    const monthlyScheduleData = generateMonthlyScheduleData();
+    if (monthlyScheduleData.length > 0) {
+      const monthlySheet = XLSX.utils.json_to_sheet(monthlyScheduleData);
+      
+      const monthlyColWidths = [
+        { wch: 22 }, // Operator
+        { wch: 18 }, // Şöbə
+        { wch: 15 }, // Rol
+        ...Array.from({ length: new Date(selectedMonth.split('-')[0], selectedMonth.split('-')[1], 0).getDate() }, () => ({ wch: 10 })) // Günlər
+      ];
+      monthlySheet['!cols'] = monthlyColWidths;
+      
+      XLSX.utils.book_append_sheet(workbook, monthlySheet, 'Aylıq Növbə Cədvəli');
+    }
+    
+    // 4. ÜMUMİ STATİSTİKA - PROFESSIONAL
+    const statsData = [
+      {
+        'Hesabat Adı': 'Növbə Dəyişikliyi Sorğuları',
+        'Say': shiftChanges.length,
+        'Təsdiqlənən': shiftChanges.filter(c => c.status === 'approved').length,
+        'Rədd edilən': shiftChanges.filter(c => c.status === 'rejected').length,
+        'Gözləyən': shiftChanges.filter(c => c.status === 'pending').length
+      },
+      {
+        'Hesabat Adı': 'Məzuniyyət Sorğuları',
+        'Say': vacations.length,
+        'Təsdiqlənən': vacations.filter(v => v.status === 'approved').length,
+        'Rədd edilən': vacations.filter(v => v.status === 'rejected').length,
+        'Gözləyən': vacations.filter(v => v.status === 'pending').length
+      },
+      {
+        'Hesabat Adı': 'Ümumi Sorğular',
+        'Say': shiftChanges.length + vacations.length,
+        'Təsdiqlənən': shiftChanges.filter(c => c.status === 'approved').length + vacations.filter(v => v.status === 'approved').length,
+        'Rədd edilən': shiftChanges.filter(c => c.status === 'rejected').length + vacations.filter(v => v.status === 'rejected').length,
+        'Gözləyən': shiftChanges.filter(c => c.status === 'pending').length + vacations.filter(v => v.status === 'pending').length
+      }
+    ];
+    
+    const statsSheet = XLSX.utils.json_to_sheet(statsData);
+    const statsColWidths = [
+      { wch: 28 }, // Hesabat Adı
+      { wch: 10 }, // Say
+      { wch: 15 }, // Təsdiqlənən
+      { wch: 15 }, // Rədd edilən
+      { wch: 15 }  // Gözləyən
+    ];
+    statsSheet['!cols'] = statsColWidths;
+    
+    XLSX.utils.book_append_sheet(workbook, statsSheet, 'Statistika');
+  
+    // Excel faylını professional adla yüklə
+    const currentDate = new Date().toLocaleDateString('az-AZ');
+    const fileName = `Növbə_Hesabatları_${currentUser.name}_${currentDate.replace(/\//g, '-')}.xlsx`;
+    
+    XLSX.writeFile(workbook, fileName);
+    
+    alert(`✅ Professional Excel hesabatı uğurla yükləndi!\nFayl adı: ${fileName}`);
   };
-
-  return (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-        <h2 style={{ color: '#1e293b', margin: 0, fontSize: '24px', fontWeight: '700' }}>Hesabatlar</h2>
-        
-        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-          {/* Axtarış */}
-          <div style={{ position: 'relative' }}>
-            <input
-              type="text"
-              placeholder="Operator və ya şöbə axtar..."
-              value={searchTerm}
-              onChange={(e) => onSearchChange(e.target.value)}
-              style={{
-                padding: '10px 16px 10px 40px',
-                border: '1px solid #e2e8f0',
-                borderRadius: '8px',
-                fontSize: '14px',
-                width: '280px',
-                background: '#f8fafc'
-              }}
-            />
-            <span style={{
-              position: 'absolute',
-              left: '12px',
-              top: '50%',
-              transform: 'translateY(-50%)',
-              color: '#64748b'
-            }}>
-              🔍
-            </span>
-          </div>
-
-          {/* Excel Export Düyməsi */}
-          <button 
-            onClick={exportToExcel}
-            style={{ 
-              background: 'linear-gradient(135deg, #10b981 0%, #047857 100%)',
-              color: 'white',
-              border: 'none',
-              padding: '10px 16px',
-              borderRadius: '8px',
-              fontSize: '14px',
-              fontWeight: '600',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              transition: 'all 0.2s ease'
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.transform = 'translateY(-2px)';
-              e.currentTarget.style.boxShadow = '0 4px 12px rgba(16, 185, 129, 0.4)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = 'translateY(0)';
-              e.currentTarget.style.boxShadow = 'none';
-            }}
-          >
-            <span>📊</span>
-            Excel-ə Yüklə
-          </button>
-
-          <div style={{ 
-            background: '#f0f9ff', 
-            color: '#0369a1', 
-            padding: '8px 16px', 
-            borderRadius: '12px', 
-            fontSize: '14px',
-            fontWeight: '600',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px'
-          }}>
-            <span>📊</span>
-            <span>Ümumi Sorğular: {shiftChanges.length + vacations.length}</span>
-          </div>
-        </div>
-      </div>
+  
+  // Köməkçi funksiyalar
+  const getStatusText = (status) => {
+    const statusMap = {
+      'pending': '⏳ Gözləyir',
+      'approved': '✅ Təsdiqləndi',
+      'rejected': '❌ Rədd edildi',
+      'pending_b_approval': '⏳ Operator Gözləyir',
+      'pending_admin_approval': '⏳ Admin Gözləyir'
+    };
+    return statusMap[status] || status;
+  };
+  
+  const generateMonthlyScheduleData = () => {
+    const [year, month] = selectedMonth.split('-').map(Number);
+    const daysInMonth = new Date(year, month, 0).getDate();
+    const monthSchedules = schedules.filter(s => s.date?.startsWith(selectedMonth));
+    
+    return users.map(user => {
+      const rowData = {
+        'Operator': user.name,
+        'Şöbə': departments[user.department]?.name || user.department,
+        'Rol': roles[user.role]?.name || user.role
+      };
+      
+      // Hər gün üçün növbə məlumatı
+      for (let day = 1; day <= daysInMonth; day++) {
+        const date = `${selectedMonth}-${day.toString().padStart(2, '0')}`;
+        const schedule = monthSchedules.find(s => s.userId === user.id && s.date === date);
+        rowData[day] = schedule ? schedule.shiftName : 'OFF';
+      }
+      
+      return rowData;
+    });
+  };
 
       {/* Növbə Dəyişikliyi Sorğuları */}
       <div style={styles.card}>
@@ -5823,7 +6652,7 @@ function AdminDashboard({ user, userProfile, users, schedules, shiftTypes, shift
     <div style={styles.dashboard}>
       <header style={styles.header}>
         <h1 style={{ color: 'white', margin: 0, display: 'flex', alignItems: 'center', gap: '10px' }}>
-          {userProfile.role === 'admin' ? '👑' : '👤'}
+          {userProfile.role === 'admin' ? '' : '👤'}
           <span>{roles[userProfile.role]?.name} PANEL</span>
         </h1>
         <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
@@ -5929,20 +6758,44 @@ function AdminDashboard({ user, userProfile, users, schedules, shiftTypes, shift
         >
           ☕ Fasilələr
         </button>
+        <button 
+    onClick={() => setActiveTab('monthlyDelays')} 
+    style={{ 
+      ...styles.button, 
+      background: activeTab === 'monthlyDelays' ? '#dc2626' : '#e2e8f0', 
+      color: activeTab === 'monthlyDelays' ? 'white' : '#64748b',
+      fontWeight: '600'
+    }}
+  >
+    📊 Aylıq Gecikmələr
+  </button>
       </nav>
 
       <div style={styles.content}>
-        {activeTab !== 'planner' && activeTab !== 'breaks' && (
-          <input
-            style={styles.searchBox}
-            placeholder="🔍 Axtarış (ad, email, şöbə...)"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
-        )}
-        
-        {renderContent()}
-      </div>
+  {activeTab === 'monthlyDelays' ? (
+    <MonthlyDelaysSection 
+      operators={filteredUsers}
+      delays={monthlyDelays}
+      currentMonth={currentDelayMonth}
+      onDelayUpdate={onDelayUpdate}
+      onShowReport={onShowDelayReport}
+      userProfile={userProfile}
+      onMonthChange={setCurrentDelayMonth}
+    />
+  ) : activeTab !== 'planner' && activeTab !== 'breaks' ? (
+    <>
+      <input
+        style={styles.searchBox}
+        placeholder="🔍 Axtarış (ad, email, şöbə...)"
+        value={searchTerm}
+        onChange={(e) => setSearchTerm(e.target.value)}
+      />
+      {renderContent()}
+    </>
+  ) : (
+    renderContent()
+  )}
+</div>
 
       {/* Yeni İstifadəçi Modal */}
       {showAddUserModal && (
