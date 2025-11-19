@@ -222,8 +222,7 @@ const styles = {
     background: 'white',
     minWidth: '150px',
     position: 'sticky',
-    left: 0,
-  
+    left: 0
   },
   dayCell: {
     padding: '8px 4px',
@@ -231,61 +230,61 @@ const styles = {
     background: 'white',
     minWidth: '50px',
     height: '50px'
+  },
+  // AŞAĞIDAKILARI styles OBYEKTİNİN İÇİNƏ DAXİL ET
+  monthlyDelaysTable: {
+    background: 'white',
+    borderRadius: '16px',
+    overflow: 'hidden',
+    boxShadow: '0 8px 30px rgba(0,0,0,0.08)',
+    marginBottom: '24px'
+  },
+  delayInput: {
+    width: '70px',
+    padding: '8px',
+    border: '2px solid #e2e8f0',
+    borderRadius: '8px',
+    textAlign: 'center',
+    fontSize: '14px',
+    fontWeight: '600'
+  },
+  highlightCell: {
+    background: '#fff3cd',
+    border: '2px solid #ffc107',
+    fontWeight: 'bold',
+    color: '#856404'
+  },
+  reportModal: {
+    position: 'fixed',
+    top: '50%',
+    left: '50%',
+    transform: 'translate(-50%, -50%)',
+    width: '90%',
+    maxWidth: '1000px',
+    background: 'white',
+    borderRadius: '16px',
+    boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+    zIndex: 1000,
+    maxHeight: '90vh',
+    overflow: 'auto'
+  },
+  excelTable: {
+    border: '1px solid #ddd',
+    width: '100%',
+    borderCollapse: 'collapse'
+  },
+  excelHeader: {
+    background: '#f5f5f5',
+    border: '1px solid #ddd',
+    padding: '10px',
+    textAlign: 'left',
+    fontWeight: '600'
+  },
+  excelCell: {
+    border: '1px solid #ddd',
+    padding: '8px',
+    fontSize: '13px'
   }
-},
-monthlyDelaysTable: {
-  background: 'white',
-  borderRadius: '16px',
-  overflow: 'hidden',
-  boxShadow: '0 8px 30px rgba(0,0,0,0.08)',
-  marginBottom: '24px'
-},
-delayInput: {
-  width: '70px',
-  padding: '8px',
-  border: '2px solid #e2e8f0',
-  borderRadius: '8px',
-  textAlign: 'center',
-  fontSize: '14px',
-  fontWeight: '600'
-},
-highlightCell: {
-  background: '#fff3cd',
-  border: '2px solid #ffc107',
-  fontWeight: 'bold',
-  color: '#856404'
-},
-reportModal: {
-  position: 'fixed',
-  top: '50%',
-  left: '50%',
-  transform: 'translate(-50%, -50%)',
-  width: '90%',
-  maxWidth: '1000px',
-  background: 'white',
-  borderRadius: '16px',
-  boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
-  zIndex: 1000,
-  maxHeight: '90vh',
-  overflow: 'auto'
-},
-excelTable: {
-  border: '1px solid #ddd',
-  width: '100%',
-  borderCollapse: 'collapse'
-},
-excelHeader: {
-  background: '#f5f5f5',
-  border: '1px solid #ddd',
-  padding: '10px',
-  textAlign: 'left',
-  fontWeight: '600'
-},
-excelCell: {
-  border: '1px solid #ddd',
-  padding: '8px',
-  fontSize: '13px'
-}
 };
 // Şöbələr
 const departments = {
@@ -368,6 +367,22 @@ function App() {
   const [showDelayConfirmation, setShowDelayConfirmation] = useState(false);
   const [pendingDelayData, setPendingDelayData] = useState(null);
   const [currentDelayMonth, setCurrentDelayMonth] = useState(new Date().toISOString().slice(0, 7));
+
+  const handleDelayUpdate = async (operatorId, date, delayMinutes, reason = '') => {
+    try {
+      const isPastDate = new Date(date) < new Date();
+      
+      if (isPastDate && delayMinutes > 0) {
+        setPendingDelayData({ operatorId, date, delayMinutes, reason });
+        setShowDelayConfirmation(true);
+        return;
+      }
+      
+      await saveDelayToFirebase(operatorId, date, delayMinutes, reason);
+    } catch (error) {
+      console.error('Delay update error:', error);
+    }
+  };
 
   // Real-time listeners
   useEffect(() => {
@@ -459,26 +474,102 @@ function App() {
       );
 
       const monthlyDelaysQuery = query(collection(db, 'monthlyDelays'));
-    const unsubscribeMonthlyDelays = onSnapshot(monthlyDelaysQuery,
-      (snapshot) => {
-        const delaysList = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
-        setMonthlyDelays(delaysList);
-      },
-      (error) => {
-        console.error('Monthly delays listener xətası:', error);
-      }
-    );
-
-    return () => {
-      // ... digər unsubscribe-lar
-      unsubscribeMonthlyDelays(); // ƏLAVƏ EDİN
-    };
-  }
-}, [userProfile]);
-
+      const unsubscribeMonthlyDelays = onSnapshot(monthlyDelaysQuery,
+        (snapshot) => {
+          const delaysList = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+          }));
+          setMonthlyDelays(delaysList);
+        },
+        (error) => {
+          console.error('Monthly delays listener xətası:', error);
+        }
+      );
+  
+      return () => {
+        unsubscribeMonthlyDelays();
+      };
+    }
+  }, [userProfile]);
+  
+  useEffect(() => {
+    if (userProfile && userProfile.role === 'admin') {
+      // Users listener
+      const usersQuery = query(collection(db, 'users'));
+      const unsubscribeUsers = onSnapshot(usersQuery,
+        (snapshot) => {
+          const usersList = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+          }));
+          setUsers(usersList);
+        },
+        (error) => {
+          console.error('Users listener xətası:', error);
+        }
+      );
+  
+      // Schedules listener
+      const schedulesQuery = query(collection(db, 'schedules'));
+      const unsubscribeSchedules = onSnapshot(schedulesQuery,
+        (snapshot) => {
+          const schedulesList = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+          }));
+          setSchedules(schedulesList);
+        },
+        (error) => {
+          console.error('Schedules listener xətası:', error);
+        }
+      );
+  
+      // Shift changes listener
+      const changesQuery = query(collection(db, 'shiftChanges'));
+      const unsubscribeChanges = onSnapshot(changesQuery,
+        (snapshot) => {
+          const changesList = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+          }));
+          setShiftChanges(changesList);
+        },
+        (error) => {
+          console.error('Shift changes listener xətası:', error);
+        }
+      );
+  
+      // Vacations listener
+      const vacationsQuery = query(collection(db, 'vacations'));
+      const unsubscribeVacations = onSnapshot(vacationsQuery,
+        (snapshot) => {
+          const vacationsList = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+          }));
+          setVacations(vacationsList);
+        },
+        (error) => {
+          console.error('Vacations listener xətası:', error);
+        }
+      );
+  
+      // Breaks listener
+      const breaksQuery = query(collection(db, 'breaks'));
+      const unsubscribeBreaks = onSnapshot(breaksQuery,
+        (snapshot) => {
+          const breaksList = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+          }));
+          setBreaks(breaksList);
+        },
+        (error) => {
+          console.error('Breaks listener xətası:', error);
+        }
+      );
+  
       // Break requests listener
       const breakRequestsQuery = query(collection(db, 'breakRequests'));
       const unsubscribeBreakRequests = onSnapshot(breakRequestsQuery,
@@ -493,7 +584,7 @@ function App() {
           console.error('Break requests listener xətası:', error);
         }
       );
-
+  
       return () => {
         unsubscribeUsers();
         unsubscribeSchedules();
@@ -504,7 +595,7 @@ function App() {
       };
     }
   }, [userProfile]);
-
+  
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
@@ -520,10 +611,11 @@ function App() {
         setVacations([]);
         setBreaks([]);
         setBreakRequests([]);
+        setMonthlyDelays([]);
       }
       setLoading(false);
     });
-
+  
     return () => unsubscribe();
   }, []);
 
@@ -577,21 +669,6 @@ function App() {
       }
     } catch (error) {
       console.error('❌ ShiftTypes initialization error:', error);
-    }
-  };
-  const handleDelayUpdate = async (operatorId, date, delayMinutes, reason = '') => {
-    try {
-      const isPastDate = new Date(date) < new Date();
-      
-      if (isPastDate && delayMinutes > 0) {
-        setPendingDelayData({ operatorId, date, delayMinutes, reason });
-        setShowDelayConfirmation(true);
-        return;
-      }
-      
-      await saveDelayToFirebase(operatorId, date, delayMinutes, reason);
-    } catch (error) {
-      console.error('Delay update error:', error);
     }
   };
 
@@ -843,8 +920,8 @@ function App() {
   );
 }
 
-// 
-const OperatorDashboard = ({ user, userProfile, users, schedules, shiftChanges, vacations, breaks, breakRequests, onLogout }) => {
+//
+function OperatorDashboard({ user, userProfile, users, schedules, shiftChanges, vacations, breaks, breakRequests, onLogout }) {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [showChangeModal, setShowChangeModal] = useState(false);
   const [showVacationModal, setShowVacationModal] = useState(false);
@@ -870,7 +947,7 @@ const OperatorDashboard = ({ user, userProfile, users, schedules, shiftChanges, 
     // Cari ayda növbəsi olan operatorları tap (YALNIZ SİZİN ŞÖBƏNİZDƏ)
     const operatorsWithSchedules = users.filter(user => 
       user.role === 'operator' && 
-      user.department === userProfile.department && // Şöbə filtrini əlavə edin
+      user.department === userProfile.department &&
       schedules.some(schedule => 
         schedule.userId === user.id && 
         new Date(schedule.date).getMonth() === currentMonth &&
@@ -1073,14 +1150,14 @@ const OperatorDashboard = ({ user, userProfile, users, schedules, shiftChanges, 
   const lunchBreaks = useMemo(() => 
     allBreaksToday.filter(b => b.breakType === 'lunch'), [allBreaksToday]);
 
-  // Gələn növbə dəyişikliyi sorğuları (KÖHNƏ SİSTEM İLƏ)
+  // Gələn növbə dəyişikliyi sorğuları
   const incomingShiftRequests = useMemo(() => 
     shiftChanges.filter(change => 
       change.toUserId === user.uid && 
-      change.status === 'pending' // Köhnə sistemdə 'pending' statusu
+      change.status === 'pending'
     ), [shiftChanges, user.uid]);
 
-  // Növbə dəyişikliyi sorğusu (KÖHNƏ SİSTEM)
+  // Növbə dəyişikliyi sorğusu
   const handleShiftChange = async () => {
     if (!changeRequest.toUserId || !changeRequest.date) {
       alert('⚠️ Zəhmət olmasa bütün sahələri doldurun!');
@@ -1116,7 +1193,6 @@ const OperatorDashboard = ({ user, userProfile, users, schedules, shiftChanges, 
         return;
       }
 
-      // ✅ KÖHNƏ SİSTEM İSTİFADƏ ET - shiftChanges collection
       await addDoc(collection(db, 'shiftChanges'), {
         fromUserId: user.uid,
         fromUserName: userProfile.name,
@@ -1132,7 +1208,7 @@ const OperatorDashboard = ({ user, userProfile, users, schedules, shiftChanges, 
         toUserStartTime: toUserSchedule.startTime,
         toUserEndTime: toUserSchedule.endTime,
         reason: changeRequest.reason,
-        status: 'pending', // Köhnə status
+        status: 'pending',
         createdAt: serverTimestamp()
       });
 
@@ -1148,7 +1224,7 @@ const OperatorDashboard = ({ user, userProfile, users, schedules, shiftChanges, 
     }
   };
 
-  // Gələn sorğunu təsdiqlə (KÖHNƏ SİSTEM)
+  // Gələn sorğunu təsdiqlə
   const approveShiftChangeRequest = async (requestId) => {
     try {
       const request = shiftChanges.find(r => r.id === requestId);
@@ -1158,7 +1234,6 @@ const OperatorDashboard = ({ user, userProfile, users, schedules, shiftChanges, 
         return;
       }
 
-      // Statusu təsdiqləndi olaraq yenilə
       await updateDoc(doc(db, 'shiftChanges', requestId), {
         status: 'approved',
         approvedBy: userProfile.name,
@@ -1173,7 +1248,7 @@ const OperatorDashboard = ({ user, userProfile, users, schedules, shiftChanges, 
     }
   };
 
-  // Gələn sorğunu rədd et (KÖHNƏ SİSTEM)
+  // Gələn sorğunu rədd et
   const rejectShiftChangeRequest = async (requestId) => {
     try {
       const request = shiftChanges.find(r => r.id === requestId);
@@ -1183,7 +1258,6 @@ const OperatorDashboard = ({ user, userProfile, users, schedules, shiftChanges, 
         return;
       }
 
-      // Statusu rədd edildi olaraq yenilə
       await updateDoc(doc(db, 'shiftChanges', requestId), {
         status: 'rejected',
         approvedBy: userProfile.name,
@@ -1329,7 +1403,6 @@ const OperatorDashboard = ({ user, userProfile, users, schedules, shiftChanges, 
                 Növbə Cədvəlim
               </h2>
               <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-                {/* Görünüş növü dəyişdirici */}
                 <div style={{ display: 'flex', background: '#f1f5f9', borderRadius: '8px', padding: '4px' }}>
                   <button
                     onClick={() => setScheduleViewType('list')}
@@ -1382,7 +1455,6 @@ const OperatorDashboard = ({ user, userProfile, users, schedules, shiftChanges, 
               </div>
             </div>
             
-            {/* Görünüş növünə görə göstər */}
             {scheduleViewType === 'monthly' ? (
               <MonthlyScheduleView 
                 schedules={schedules}
@@ -1505,7 +1577,6 @@ const OperatorDashboard = ({ user, userProfile, users, schedules, shiftChanges, 
             </div>
 
             <div style={styles.grid2col}>
-              {/* Öz fasilələrim */}
               <div style={styles.card}>
                 <h3 style={{ 
                   color: '#3b82f6', 
@@ -1626,7 +1697,6 @@ const OperatorDashboard = ({ user, userProfile, users, schedules, shiftChanges, 
                 )}
               </div>
 
-              {/* Bütün fasilələr */}
               <div style={styles.card}>
                 <h3 style={{ 
                   color: '#f59e0b', 
@@ -1652,7 +1722,6 @@ const OperatorDashboard = ({ user, userProfile, users, schedules, shiftChanges, 
                 </h3>
                 
                 <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
-                  {/* Çay fasilələri */}
                   <div style={{ marginBottom: '20px' }}>
                     <h4 style={{ 
                       color: '#3b82f6', 
@@ -1727,7 +1796,6 @@ const OperatorDashboard = ({ user, userProfile, users, schedules, shiftChanges, 
                     )}
                   </div>
 
-                  {/* Nahar fasilələri */}
                   <div>
                     <h4 style={{ 
                       color: '#10b981', 
@@ -1794,7 +1862,6 @@ const OperatorDashboard = ({ user, userProfile, users, schedules, shiftChanges, 
               </div>
             </div>
 
-            {/* Fasilə dəyişiklik sorğuları */}
             <div style={styles.card}>
               <h3 style={{ 
                 color: '#ef4444', 
@@ -1957,7 +2024,6 @@ const OperatorDashboard = ({ user, userProfile, users, schedules, shiftChanges, 
               </div>
             </div>
             
-            {/* Gələn Sorğular Modal */}
             {showIncomingRequests && (
               <div style={styles.modal}>
                 <div style={styles.modalContent}>
@@ -2095,7 +2161,6 @@ const OperatorDashboard = ({ user, userProfile, users, schedules, shiftChanges, 
               </div>
             )}
             
-            {/* Göndərdiyim Sorğular */}
             <div style={styles.card}>
               <h3 style={{ 
                 color: '#3b82f6', 
@@ -2394,7 +2459,6 @@ const OperatorDashboard = ({ user, userProfile, users, schedules, shiftChanges, 
               </div>
             </div>
 
-            {/* Bugünkü fasilələr */}
             <div style={styles.card}>
               <h3 style={{ 
                 marginBottom: '20px', 
@@ -2486,7 +2550,6 @@ const OperatorDashboard = ({ user, userProfile, users, schedules, shiftChanges, 
               )}
             </div>
 
-            {/* Yaxınlaşan növbələr */}
             {userSchedules.filter(s => new Date(s.date) >= new Date()).length > 0 && (
               <div style={styles.card}>
                 <h3 style={{ 
@@ -2808,7 +2871,7 @@ const OperatorDashboard = ({ user, userProfile, users, schedules, shiftChanges, 
                 </select>
               </div>
             )}
-            
+
             {breakRequest.breakType === 'lunch' && (
               <div style={{ marginBottom: '20px' }}>
                 <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', color: '#374151', fontSize: '14px' }}>
@@ -2832,81 +2895,49 @@ const OperatorDashboard = ({ user, userProfile, users, schedules, shiftChanges, 
                 </select>
               </div>
             )}
-            {showDelayReport && selectedDelayOperator && (
-              <DelayReportModal 
-                operator={selectedDelayOperator}
-                delays={monthlyDelays}
-                onClose={() => setShowDelayReport(false)}
-                currentMonth={currentDelayMonth}
-              />
-            )}
-
-            {showDelayConfirmation && pendingDelayData && (
-              <DelayConfirmationModal 
-                data={pendingDelayData}
-                onConfirm={() => {
-                  saveDelayToFirebase(
-                    pendingDelayData.operatorId, 
-                    pendingDelayData.date, 
-                    pendingDelayData.delayMinutes, 
-                    pendingDelayData.reason
-                  );
-                  setShowDelayConfirmation(false);
-                  setPendingDelayData(null);
-                }}
-                onCancel={() => {
-                  setShowDelayConfirmation(false);
-                  setPendingDelayData(null);
-                }}
-              />
-            )}
-          </div>
-        </div>
-      )}
-            
 
             <div style={{ marginBottom: '20px' }}>
               <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', color: '#374151', fontSize: '14px' }}>
                 📅 Tarix
               </label>
-              <input 
-                style={{ 
-                  ...styles.input, 
+              <input
+                style={{
+                  ...styles.input,
                   borderColor: selectedDate ? '#3b82f6' : '#e2e8f0',
                   background: selectedDate ? '#f8fafc' : 'white'
-                }} 
-                type="date" 
-                value={selectedDate} 
-                onChange={(e) => setSelectedDate(e.target.value)} 
+                }}
+                type="date"
+                value={selectedDate}
+                onChange={(e) => setSelectedDate(e.target.value)}
               />
             </div>
-            
+
             <div style={{ marginBottom: '24px' }}>
               <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', color: '#374151', fontSize: '14px' }}>
                 📝 Dəyişiklik Səbəbi (isteğe bağlı)
               </label>
-              <textarea 
+              <textarea
                 style={{
-                  ...styles.input, 
+                  ...styles.input,
                   minHeight: '100px',
                   borderColor: breakRequest.reason ? '#3b82f6' : '#e2e8f0',
                   background: breakRequest.reason ? '#f8fafc' : 'white',
                   resize: 'vertical'
-                }} 
+                }}
                 placeholder="Niyə fasiləni dəyişmək istəyirsiniz?"
-                value={breakRequest.reason} 
+                value={breakRequest.reason}
                 onChange={(e) => setBreakRequest({...breakRequest, reason: e.target.value})}
               />
             </div>
-            
+
             <div style={{ display: 'flex', gap: '12px', marginTop: '24px' }}>
-              <button 
-                onClick={handleBreakRequest} 
-                style={{ 
-                  ...styles.button, 
-                  background: 'linear-gradient(135deg, #10b981 0%, #047857 100%)', 
-                  color: 'white', 
-                  flex: 1, 
+              <button
+                onClick={handleBreakRequest}
+                style={{
+                  ...styles.button,
+                  background: 'linear-gradient(135deg, #10b981 0%, #047857 100%)',
+                  color: 'white',
+                  flex: 1,
                   fontWeight: '600',
                   fontSize: '15px',
                   padding: '14px'
@@ -2915,13 +2946,13 @@ const OperatorDashboard = ({ user, userProfile, users, schedules, shiftChanges, 
                 <span>📨</span>
                 Göndər
               </button>
-              <button 
-                onClick={() => setShowBreakModal(false)} 
-                style={{ 
-                  ...styles.button, 
-                  background: '#f8fafc', 
-                  color: '#64748b', 
-                  flex: 1, 
+              <button
+                onClick={() => setShowBreakModal(false)}
+                style={{
+                  ...styles.button,
+                  background: '#f8fafc',
+                  color: '#64748b',
+                  flex: 1,
                   fontWeight: '600',
                   fontSize: '15px',
                   padding: '14px',
@@ -2942,13 +2973,13 @@ const OperatorDashboard = ({ user, userProfile, users, schedules, shiftChanges, 
           <div style={styles.modalContent}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
               <h3 style={{ color: '#1e293b', margin: 0, fontSize: '20px', fontWeight: '700' }}>Növbə Dəyişikliyi Sorğusu</h3>
-              <button 
-                onClick={() => setShowChangeModal(false)} 
-                style={{ 
-                  background: 'none', 
-                  border: 'none', 
-                  fontSize: '20px', 
-                  cursor: 'pointer', 
+              <button
+                onClick={() => setShowChangeModal(false)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  fontSize: '20px',
+                  cursor: 'pointer',
                   color: '#64748b',
                   width: '32px',
                   height: '32px',
@@ -2968,18 +2999,18 @@ const OperatorDashboard = ({ user, userProfile, users, schedules, shiftChanges, 
                 ✕
               </button>
             </div>
-            
+
             <div style={{ marginBottom: '20px' }}>
               <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', color: '#374151', fontSize: '14px' }}>
                 👥 Kiminlə Dəyişmək İstəyirsiniz?
               </label>
-              <select 
-                style={{ 
-                  ...styles.input, 
+              <select
+                style={{
+                  ...styles.input,
                   borderColor: changeRequest.toUserId ? '#3b82f6' : '#e2e8f0',
                   background: changeRequest.toUserId ? '#f8fafc' : 'white'
-                }} 
-                value={changeRequest.toUserId} 
+                }}
+                value={changeRequest.toUserId}
                 onChange={(e) => setChangeRequest({...changeRequest, toUserId: e.target.value})}
               >
                 <option value="">Operator seçin</option>
@@ -2990,50 +3021,50 @@ const OperatorDashboard = ({ user, userProfile, users, schedules, shiftChanges, 
                 ))}
               </select>
             </div>
-            
+
             <div style={{ marginBottom: '20px' }}>
               <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', color: '#374151', fontSize: '14px' }}>
                 📅 Tarix
               </label>
-              <input 
-                style={{ 
-                  ...styles.input, 
+              <input
+                style={{
+                  ...styles.input,
                   borderColor: changeRequest.date ? '#3b82f6' : '#e2e8f0',
                   background: changeRequest.date ? '#f8fafc' : 'white'
-                }} 
-                type="date" 
-                value={changeRequest.date} 
-                onChange={(e) => setChangeRequest({...changeRequest, date: e.target.value})} 
+                }}
+                type="date"
+                value={changeRequest.date}
+                onChange={(e) => setChangeRequest({...changeRequest, date: e.target.value})}
                 placeholder="Tarix seçin"
               />
             </div>
-            
+
             <div style={{ marginBottom: '24px' }}>
               <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', color: '#374151', fontSize: '14px' }}>
                 📝 Dəyişiklik Səbəbi (isteğe bağlı)
               </label>
-              <textarea 
+              <textarea
                 style={{
-                  ...styles.input, 
+                  ...styles.input,
                   minHeight: '100px',
                   borderColor: changeRequest.reason ? '#3b82f6' : '#e2e8f0',
                   background: changeRequest.reason ? '#f8fafc' : 'white',
                   resize: 'vertical'
-                }} 
+                }}
                 placeholder="Niyə növbəni dəyişmək istəyirsiniz?"
-                value={changeRequest.reason} 
+                value={changeRequest.reason}
                 onChange={(e) => setChangeRequest({...changeRequest, reason: e.target.value})}
               />
             </div>
-            
+
             <div style={{ display: 'flex', gap: '12px', marginTop: '24px' }}>
-              <button 
-                onClick={handleShiftChange} 
-                style={{ 
-                  ...styles.button, 
-                  background: 'linear-gradient(135deg, #10b981 0%, #047857 100%)', 
-                  color: 'white', 
-                  flex: 1, 
+              <button
+                onClick={handleShiftChange}
+                style={{
+                  ...styles.button,
+                  background: 'linear-gradient(135deg, #10b981 0%, #047857 100%)',
+                  color: 'white',
+                  flex: 1,
                   fontWeight: '600',
                   fontSize: '15px',
                   padding: '14px'
@@ -3042,13 +3073,13 @@ const OperatorDashboard = ({ user, userProfile, users, schedules, shiftChanges, 
                 <span>📨</span>
                 Göndər
               </button>
-              <button 
-                onClick={() => setShowChangeModal(false)} 
-                style={{ 
-                  ...styles.button, 
-                  background: '#f8fafc', 
-                  color: '#64748b', 
-                  flex: 1, 
+              <button
+                onClick={() => setShowChangeModal(false)}
+                style={{
+                  ...styles.button,
+                  background: '#f8fafc',
+                  color: '#64748b',
+                  flex: 1,
                   fontWeight: '600',
                   fontSize: '15px',
                   padding: '14px',
@@ -3069,13 +3100,13 @@ const OperatorDashboard = ({ user, userProfile, users, schedules, shiftChanges, 
           <div style={styles.modalContent}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
               <h3 style={{ color: '#1e293b', margin: 0, fontSize: '20px', fontWeight: '700' }}>Məzuniyyət Sorğusu</h3>
-              <button 
-                onClick={() => setShowVacationModal(false)} 
-                style={{ 
-                  background: 'none', 
-                  border: 'none', 
-                  fontSize: '20px', 
-                  cursor: 'pointer', 
+              <button
+                onClick={() => setShowVacationModal(false)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  fontSize: '20px',
+                  cursor: 'pointer',
                   color: '#64748b',
                   width: '32px',
                   height: '32px',
@@ -3095,67 +3126,67 @@ const OperatorDashboard = ({ user, userProfile, users, schedules, shiftChanges, 
                 ✕
               </button>
             </div>
-            
+
             <div style={{ marginBottom: '20px' }}>
               <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', color: '#374151', fontSize: '14px' }}>
                 📅 Başlama Tarixi
               </label>
-              <input 
-                style={{ 
-                  ...styles.input, 
+              <input
+                style={{
+                  ...styles.input,
                   borderColor: vacationRequest.startDate ? '#3b82f6' : '#e2e8f0',
                   background: vacationRequest.startDate ? '#f8fafc' : 'white'
-                }} 
-                type="date" 
-                value={vacationRequest.startDate} 
-                onChange={(e) => setVacationRequest({...vacationRequest, startDate: e.target.value})} 
+                }}
+                type="date"
+                value={vacationRequest.startDate}
+                onChange={(e) => setVacationRequest({...vacationRequest, startDate: e.target.value})}
                 placeholder="Başlama tarixi"
               />
             </div>
-            
+
             <div style={{ marginBottom: '20px' }}>
               <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', color: '#374151', fontSize: '14px' }}>
                 📅 Bitmə Tarixi
               </label>
-              <input 
-                style={{ 
-                  ...styles.input, 
+              <input
+                style={{
+                  ...styles.input,
                   borderColor: vacationRequest.endDate ? '#3b82f6' : '#e2e8f0',
                   background: vacationRequest.endDate ? '#f8fafc' : 'white'
-                }} 
-                type="date" 
-                value={vacationRequest.endDate} 
-                onChange={(e) => setVacationRequest({...vacationRequest, endDate: e.target.value})} 
+                }}
+                type="date"
+                value={vacationRequest.endDate}
+                onChange={(e) => setVacationRequest({...vacationRequest, endDate: e.target.value})}
                 placeholder="Bitmə tarixi"
               />
             </div>
-            
+
             <div style={{ marginBottom: '24px' }}>
               <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', color: '#374151', fontSize: '14px' }}>
                 📝 Məzuniyyət Səbəbi (isteğe bağlı)
               </label>
-              <textarea 
+              <textarea
                 style={{
-                  ...styles.input, 
+                  ...styles.input,
                   minHeight: '100px',
                   borderColor: vacationRequest.reason ? '#3b82f6' : '#e2e8f0',
                   background: vacationRequest.reason ? '#f8fafc' : 'white',
                   resize: 'vertical'
-                }} 
+                }}
                 placeholder="Məzuniyyət səbəbinizi qeyd edin"
-                value={vacationRequest.reason} 
+                value={vacationRequest.reason}
                 onChange={(e) => setVacationRequest({...vacationRequest, reason: e.target.value})}
               />
             </div>
-            
+
             <div style={{ display: 'flex', gap: '12px', marginTop: '24px' }}>
-              <button 
-                onClick={handleVacationRequest} 
-                style={{ 
-                  ...styles.button, 
-                  background: 'linear-gradient(135deg, #10b981 0%, #047857 100%)', 
-                  color: 'white', 
-                  flex: 1, 
+              <button
+                onClick={handleVacationRequest}
+                style={{
+                  ...styles.button,
+                  background: 'linear-gradient(135deg, #10b981 0%, #047857 100%)',
+                  color: 'white',
+                  flex: 1,
                   fontWeight: '600',
                   fontSize: '15px',
                   padding: '14px'
@@ -3164,13 +3195,13 @@ const OperatorDashboard = ({ user, userProfile, users, schedules, shiftChanges, 
                 <span>🏖️</span>
                 Göndər
               </button>
-              <button 
-                onClick={() => setShowVacationModal(false)} 
-                style={{ 
-                  ...styles.button, 
-                  background: '#f8fafc', 
-                  color: '#64748b', 
-                  flex: 1, 
+              <button
+                onClick={() => setShowVacationModal(false)}
+                style={{
+                  ...styles.button,
+                  background: '#f8fafc',
+                  color: '#64748b',
+                  flex: 1,
                   fontWeight: '600',
                   fontSize: '15px',
                   padding: '14px',
@@ -3186,8 +3217,7 @@ const OperatorDashboard = ({ user, userProfile, users, schedules, shiftChanges, 
       )}
     </div>
   );
-};
-
+}
 
 // SchedulePlanner komponenti - Professional Design
 function SchedulePlanner({ users, schedules, shiftTypes, currentUser }) {
@@ -3659,7 +3689,6 @@ function SchedulePlanner({ users, schedules, shiftTypes, currentUser }) {
                     padding: '12px 20px', 
                     borderRight: '1px solid #f1f5f9', 
                     fontWeight: '500', 
-                    background: 'inherit',
                     display: 'flex',
                     alignItems: 'center',
                     gap: '12px',
@@ -4034,7 +4063,6 @@ function MonthlyDelaysSection({ operators, delays, currentMonth, onDelayUpdate, 
                   <div style={{ 
                     padding: '12px 20px', 
                     borderRight: '1px solid #f1f5f9', 
-                    background: 'inherit',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
@@ -4598,7 +4626,6 @@ function AdminMonthlySchedule({ schedules, users, shiftTypes, selectedMonth, onM
                 padding: '15px', 
                 borderRight: '1px solid #e2e8f0', 
                 fontWeight: '500', 
-                background: 'white',
                 display: 'flex',
                 flexDirection: 'column',
                 position: 'sticky',
@@ -5309,15 +5336,12 @@ function AdminReports({ schedules, users, selectedMonth, onMonthChange, shiftCha
       { wch: 18 },  // Təsdiqlənmə Tarixi
     ];
     vacationsSheet['!cols'] = vacationsColWidths;
-    
-    XLSX.utils.book_append_sheet(workbook, vacationsSheet, 'Məzuniyyət Sorğuları');
-    
-    // 3. AYLIQ NÖVBƏ CƏDVƏLİ - PROFESSIONAL
-    const monthlyScheduleData = generateMonthlyScheduleData();
-    if (monthlyScheduleData.length > 0) {
-      const monthlySheet = XLSX.utils.json_to_sheet(monthlyScheduleData);
+     CƏDVƏLİ - PROFESSIONAL
+     const monthlyScheduleData = generateMonthlyScheduleData();
+     if (monthlyScheduleData.length > 0) {
+       const monthlySheet = XLSX.utils.json_to_sheet(monthlyScheduleData);
       
-      const monthlyColWidths = [
+       const monthlyColWidths = [
         { wch: 22 }, // Operator
         { wch: 18 }, // Şöbə
         { wch: 15 }, // Rol
@@ -5327,6 +5351,7 @@ function AdminReports({ schedules, users, selectedMonth, onMonthChange, shiftCha
       
       XLSX.utils.book_append_sheet(workbook, monthlySheet, 'Aylıq Növbə Cədvəli');
     }
+    
     
     // 4. ÜMUMİ STATİSTİKA - PROFESSIONAL
     const statsData = [
@@ -5408,7 +5433,10 @@ function AdminReports({ schedules, users, selectedMonth, onMonthChange, shiftCha
       return rowData;
     });
   };
-
+  
+  // JSX KODU AYRI BİR RETURN İÇİNDƏ OLMALIDIR
+  return (
+    <div>
       {/* Növbə Dəyişikliyi Sorğuları */}
       <div style={styles.card}>
         <h3 style={{ 
@@ -5554,7 +5582,7 @@ function AdminReports({ schedules, users, selectedMonth, onMonthChange, shiftCha
           </div>
         )}
       </div>
-
+  
       {/* Məzuniyyət Sorğuları */}
       <div style={styles.card}>
         <h3 style={{ 
@@ -5691,6 +5719,9 @@ function AdminReports({ schedules, users, selectedMonth, onMonthChange, shiftCha
     </div>
   );
 }
+    XLSX.utils.book_append_sheet(workbook, vacationsSheet, 'Məzuniyyət Sorğuları');
+    
+    // 3. AYLIQ NÖVBƏ
 
 // BreakPlanner komponenti - YENİ VERSİYA
 function BreakPlanner({ users, schedules, breaks, currentUser, onSaveBreaks }) {
@@ -6556,11 +6587,11 @@ function AdminDashboard({ user, userProfile, users, schedules, shiftTypes, shift
         schedules: monthSchedules.filter(s => s.userId === user.id).length
       }))
     };
-
+  
     console.log('📊 HESABAT:', reportData);
     alert(`📊 ${currentMonth} ayı hesabatı hazırlandı! Konsola yazıldı.`);
   };
-
+  
   const renderContent = () => {
     switch (activeTab) {
       case 'dashboard':
@@ -6610,19 +6641,19 @@ function AdminDashboard({ user, userProfile, users, schedules, shiftTypes, shift
           users={filteredUsers}
           currentUser={userProfile}
         />;
-        case 'reports':
-          return <AdminReports 
-            schedules={schedules} 
-            users={filteredUsers} 
-            selectedMonth={selectedMonth} 
-            onMonthChange={setSelectedMonth}
-            shiftChanges={shiftChanges}
-            vacations={vacations}
-            searchTerm={searchTerm}
-            onSearchChange={setSearchTerm}
-            breaks={breaks} // Əgər fasilələr də varsa əlavə edin
-            breakRequests={breakRequests} // Əgər fasilə sorğuları varsa əlavə edin
-          />
+      case 'reports':
+        return <AdminReports 
+          schedules={schedules} 
+          users={filteredUsers} 
+          selectedMonth={selectedMonth} 
+          onMonthChange={setSelectedMonth}
+          shiftChanges={shiftChanges}
+          vacations={vacations}
+          searchTerm={searchTerm}
+          onSearchChange={setSearchTerm}
+          breaks={breaks}
+          breakRequests={breakRequests}
+        />;
       case 'breaks':
         return <BreakPlanner 
           users={filteredUsers}
@@ -6630,6 +6661,16 @@ function AdminDashboard({ user, userProfile, users, schedules, shiftTypes, shift
           breaks={breaks}
           currentUser={userProfile}
           onSaveBreaks={() => setActiveTab('dashboard')}
+        />;
+      case 'monthlyDelays':
+        return <MonthlyDelaysSection 
+          operators={filteredUsers}
+          delays={monthlyDelays}
+          currentMonth={currentDelayMonth}
+          onDelayUpdate={onDelayUpdate}
+          onShowReport={onShowDelayReport}
+          userProfile={userProfile}
+          onMonthChange={setCurrentDelayMonth}
         />;
       default:
         return <AdminDashboardContent 
@@ -6647,7 +6688,7 @@ function AdminDashboard({ user, userProfile, users, schedules, shiftTypes, shift
         />;
     }
   };
-
+  
   return (
     <div style={styles.dashboard}>
       <header style={styles.header}>
@@ -6679,7 +6720,7 @@ function AdminDashboard({ user, userProfile, users, schedules, shiftTypes, shift
           </button>
         </div>
       </header>
-
+  
       <nav style={styles.nav}>
         <button 
           onClick={() => setActiveTab('dashboard')} 
@@ -6759,44 +6800,34 @@ function AdminDashboard({ user, userProfile, users, schedules, shiftTypes, shift
           ☕ Fasilələr
         </button>
         <button 
-    onClick={() => setActiveTab('monthlyDelays')} 
-    style={{ 
-      ...styles.button, 
-      background: activeTab === 'monthlyDelays' ? '#dc2626' : '#e2e8f0', 
-      color: activeTab === 'monthlyDelays' ? 'white' : '#64748b',
-      fontWeight: '600'
-    }}
-  >
-    📊 Aylıq Gecikmələr
-  </button>
+          onClick={() => setActiveTab('monthlyDelays')} 
+          style={{ 
+            ...styles.button, 
+            background: activeTab === 'monthlyDelays' ? '#dc2626' : '#e2e8f0', 
+            color: activeTab === 'monthlyDelays' ? 'white' : '#64748b',
+            fontWeight: '600'
+          }}
+        >
+          📊 Aylıq Gecikmələr
+        </button>
       </nav>
-
+  
       <div style={styles.content}>
-  {activeTab === 'monthlyDelays' ? (
-    <MonthlyDelaysSection 
-      operators={filteredUsers}
-      delays={monthlyDelays}
-      currentMonth={currentDelayMonth}
-      onDelayUpdate={onDelayUpdate}
-      onShowReport={onShowDelayReport}
-      userProfile={userProfile}
-      onMonthChange={setCurrentDelayMonth}
-    />
-  ) : activeTab !== 'planner' && activeTab !== 'breaks' ? (
-    <>
-      <input
-        style={styles.searchBox}
-        placeholder="🔍 Axtarış (ad, email, şöbə...)"
-        value={searchTerm}
-        onChange={(e) => setSearchTerm(e.target.value)}
-      />
-      {renderContent()}
-    </>
-  ) : (
-    renderContent()
-  )}
-</div>
-
+        {activeTab !== 'planner' && activeTab !== 'breaks' && activeTab !== 'monthlyDelays' ? (
+          <>
+            <input
+              style={styles.searchBox}
+              placeholder="🔍 Axtarış (ad, email, şöbə...)"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+            {renderContent()}
+          </>
+        ) : (
+          renderContent()
+        )}
+      </div>
+  
       {/* Yeni İstifadəçi Modal */}
       {showAddUserModal && (
         <div style={styles.modal}>
@@ -6887,7 +6918,7 @@ function AdminDashboard({ user, userProfile, users, schedules, shiftTypes, shift
           </div>
         </div>
       )}
-
+  
       {/* Növbə Planlaşdırma Modal */}
       {showScheduleModal && (
         <div style={styles.modal}>
@@ -6959,7 +6990,7 @@ function AdminDashboard({ user, userProfile, users, schedules, shiftTypes, shift
           </div>
         </div>
       )}
-
+  
       {/* Fasilə Planlayıcı Modal */}
       {showBreakPlanner && (
         <div style={styles.modal}>
@@ -6985,6 +7016,6 @@ function AdminDashboard({ user, userProfile, users, schedules, shiftTypes, shift
       )}
     </div>
   );
-}
-
-export default App;
+  }
+  
+  export default App;
